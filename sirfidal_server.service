@@ -1,0 +1,11 @@
+[Unit]
+Description=SiRFIDaL RFID / NFC UID authentication server
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/sirfidal_server.py
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target

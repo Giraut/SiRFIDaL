@@ -1,0 +1,11 @@
+[Unit]
+Description=SiRFIDaL NFC / RFID readers sound feedback service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/sirfidal_beep.py -u /usr/local/share/sounds/sirfidal/up.wav -d /usr/local/share/sounds/sirfidal/down.wav
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target

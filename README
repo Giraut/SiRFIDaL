@@ -1,0 +1,111 @@
+                SiRFIDaL - Simple RFID authentication for Linux
+                -----------------------------------------------
+
+This is a set of utilities to use RFID or NFC transponder UIDs as authentication
+tokens on a Linux computer - typically for login purposes.
+
+Admittedly, UIDs are a weak form of authentication. They're really no better
+than passwords. But for non-critical applications - personal computer users,
+non-critical work environments - they're good enough and very convenient.
+If you're in that situation, read on. If you need strong security, don't use
+these utilities!
+
+The utilities included are:
+
+- sirfidal_server: core program used by all the others. It manages RFID or NFC
+                   readers and authenticates users against RFID / NFC UIDs on
+                   behalf of other programs.
+
+- sirfidal_pam: PAM module that uses the SiRFIDaL server to authenticate users
+                against RFID or NFC UIDs, typcally to login.
+
+- sirfidal_useradm: utility to add or delete users allowed to authenticate
+                    with RFID / NFC UIDs.
+
+- sirfidal_autolockscreen: program to lock/unlock a graphical interface
+                           screensaver automatically using authenticated RFID
+                           or NFC transponders.
+
+- sirfidal_beep: program to beep when a RFID or NFCC transponder is read by a
+                 reader, or taken off the reader.
+
+
+
+Installation instructions for the busy man
+------------------------------------------
+
+These are instructions to install the utilities on Linux Mint, which is based
+on Ubuntu, and running systemd and the Cinnamon environment.
+
+If your Linux system isn't Linux Mint, please modify the *.py Python scripts,
+*.service systemd service files and sirfidal_pam.config PAM configuration files
+accordingly. See the comments in the Python scrips for details and available
+configurable parameters.
+
+As root:
+
+  * Prerequisits:
+
+    * Python3 installation:
+
+       apt-get install python3
+
+    * Use with PC/SC readers:
+
+       apt-get install pcscd pcsc-tools
+       - Configure PC/SC for your readers. If pcsc-scan works, SiRFIDaL will
+         work also. See https://pcsclite.apdu.fr/
+       - Make sure watch_pcsc is set to True in sirfidal_server.py
+
+    * Use with a serial reader:
+
+       - Set serial_reader_dev_file to the device file corresponding to your
+         reader in sirfidal_server.py. Make sure you have read righs.
+       - Make sure watch_serial is set to True in sirfidal_server.py
+
+    * Python3 modules needed (apt-get installation preferred, pip3 otherwise):
+
+      apt-get install python3-pyscard
+      apt-get install python3-filelock
+      apt-get install python3-psutil
+      pip3 install playsound
+
+  * Install the files:
+
+    cp *.py /usr/local/bin
+    cp *.service files /lib/systemd/system
+    cp sirfidal_pam.config /usr/share/pam-configs
+    mkdir -p /usr/local/share/sounds/sirfidal
+    cp sounds/* /usr/local/share/sounds/sirfidal
+
+  * Enable and start the systemd services:
+
+    systemctl enable sirfidal_server
+    systemctl start sirfidal_server
+
+    systemctl enable sirfidal_beep
+    systemctl start sirfidal_beep
+
+  * Configure PAM for single factor authentication (password or RFID / NFC):
+
+    - Edit /usr/share/pam-configs/unix and add "nodelay" after "pam_unix.so"
+      in the Auth sections
+
+  * Configure PAM for two-factor authentication (password and RFID / NFC):
+
+    - Edit /usr/share/pam-configs/unix and replace "success=end" with
+      "success=ok" in the Auth sections
+
+  * Finalize PAM configuration
+
+    pam-auth-update
+
+As a user:
+
+  * Run the screensaver automatic locker / unlocker:
+
+    - In Preferences > Startup Applications, click on + > Custom command
+    - Enter the name "RFID / NFC lock / unlock screen" (or whatever you want)
+    - Enter the command "/usr/local/bin/sirfidal_autolockscreen.py"
+    - Click Add
+    - Select the entry and click on the gears icon to run it now
