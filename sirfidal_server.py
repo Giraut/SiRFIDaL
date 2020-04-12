@@ -374,7 +374,7 @@ def server(main_in_q, sock):
     # Wait for a connection
     conn, _ = sock.accept()
 
-    # Get the calling process' PID
+    # Get the calling process' PID, UID and GID
     creds=conn.getsockopt(SOL_SOCKET, SO_PEERCRED, struct.calcsize("3i"))
     pid, uid, gid = struct.unpack("3i", creds)
 
