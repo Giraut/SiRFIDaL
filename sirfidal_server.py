@@ -881,8 +881,6 @@ def main():
         active_uids=active_pcsc_uids + active_serial_uids + active_hid_uids
         send_active_uids_update=True
 
-        print(active_uids)
-
       # New client notification from a client handler
       elif msg[0] == NEW_CLIENT:
 
