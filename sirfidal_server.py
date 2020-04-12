@@ -426,7 +426,7 @@ def client_handler(uid, gid, main_in_q, main_out_p, chandler_out_p, conn):
 
   force_stop_tstamp=None
 
-  # Inform the client that we have a new client
+  # Inform the main process that we have a new client
   main_in_q.put([NEW_CLIENT, [pid, main_out_p]])
   new_client_ack=False 
 
