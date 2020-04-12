@@ -143,6 +143,7 @@ import struct
 import psutil
 from time import sleep
 from select import select
+from string import hexdigits
 from datetime import datetime
 from signal import signal, SIGCHLD
 from filelock import FileLock, Timeout
@@ -290,9 +291,9 @@ def pcsc_listener(main_in_q):
           hresult, response = SCardTransmit(
 		  hcard,
 		  dwActiveProtocol,
-		  [0xFF,0xCA,0x00,0x00,0x00]
+		  [0xFF, 0xCA, 0x00, 0x00, 0x00]
 		)
-          uids.append(":".join("{:02X}".format(b) for b in response))
+          uids.append("".join("{:02X}".format(b) for b in response)[:-4])
         except KeyboardInterrupt:
           return(-1)
         except:
@@ -334,7 +335,13 @@ def serial_listener(main_in_q):
     if fdevfile:
       try:
         if(select([fdevfile], [], [], serial_read_every)[0]):
+
           uid=fdevfile.readline().strip("\r\n")
+
+          # Strip out anything not hexadecimal and uppercase it, so it has a
+          # chance to be compatible with UIDs read by the other listeners
+          uid="".join([c for c in uid.upper() if c in hexdigits])
+
         else:
           uid=None
       except KeyboardInterrupt:
@@ -470,13 +477,17 @@ def hid_listener(main_in_q):
               recvbuf += scancodes_us_kbd.get(d.scancode, ["", ""])[shifted]
 
       # Process the lines from the HID reader
-      for l in rlines:
+      for uid in rlines:
+
+        # Strip out anything not hexadecimal and uppercase it, so it has a
+        # chance to be compatible with UIDs read by the other listeners
+        uid="".join([c for c in uid.upper() if c in hexdigits])
 
         # Add or update UIDs in the expires table
-        if l not in active_uid_expires:
+        if uid not in active_uid_expires:
           send_active_uids_update=True
 
-        active_uid_expires[l]=now + hid_simulate_uid_stays_active
+        active_uid_expires[uid]=now + hid_simulate_uid_stays_active
 
     # Timeout
     else:
@@ -869,6 +880,8 @@ def main():
         active_uids_prev=active_uids
         active_uids=active_pcsc_uids + active_serial_uids + active_hid_uids
         send_active_uids_update=True
+
+        print(active_uids)
 
       # New client notification from a client handler
       elif msg[0] == NEW_CLIENT:
