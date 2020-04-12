@@ -44,7 +44,7 @@ configurable parameters.
 
 As root:
 
-  * Prerequisits:
+  * Prerequisites:
 
     * Python3 installation:
 
@@ -70,7 +70,7 @@ As root:
       apt-get install python3-psutil
       pip3 install playsound
 
-  * Install the files:
+  * Copy the files:
 
     cp *.py /usr/local/bin
     cp *.service files /lib/systemd/system
