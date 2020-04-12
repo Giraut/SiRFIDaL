@@ -109,7 +109,7 @@ As root:
 
 As a user:
 
-  * Run the automatic screensaver locker / unlocker:
+  * Run the automatic screensaver locker / unlocker [Optional]:
 
     - In Preferences > Startup Applications, click on + > Custom command
     - Enter the name "RFID / NFC lock / unlock screen" (or whatever you want)
