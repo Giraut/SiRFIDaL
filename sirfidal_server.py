@@ -219,7 +219,7 @@ def pcsc_listener(main_in_q):
 
   while True:
 
-    uids=[]
+    active_uids=[]
 
     # Wait on a PC/SC card's status change
     readers=[]
@@ -281,6 +281,7 @@ def pcsc_listener(main_in_q):
       for reader in readers:
 
         try:
+
           hresult, hcard, dwActiveProtocol = SCardConnect(
 		  hcontext,
 		  reader,
@@ -293,14 +294,18 @@ def pcsc_listener(main_in_q):
 		  dwActiveProtocol,
 		  [0xFF, 0xCA, 0x00, 0x00, 0x00]
 		)
-          uids.append("".join("{:02X}".format(b) for b in response)[:-4])
+          uid="".join("{:02X}".format(b) for b in response)[:-4]
+
+          if uid:
+            active_uids.append(uid)
+
         except KeyboardInterrupt:
           return(-1)
         except:
           pass
 
       # Send the list to the main process
-      main_in_q.put([PCSC_LISTENER_UIDS_UPDATE, uids])
+      main_in_q.put([PCSC_LISTENER_UIDS_UPDATE, active_uids])
 
       send_initial_update=False
 
