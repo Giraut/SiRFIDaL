@@ -288,13 +288,16 @@ def pcsc_listener(main_in_q):
 		  SCARD_SHARE_SHARED,
 		  SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1
 		)
-
           hresult, response = SCardTransmit(
 		  hcard,
 		  dwActiveProtocol,
 		  [0xFF, 0xCA, 0x00, 0x00, 0x00]
 		)
-          uid="".join("{:02X}".format(b) for b in response)[:-4]
+
+          uid="".join("{:02X}".format(b) for b in response)
+
+          if uid[-4:]=="9000":
+            uid=uid[:-4]
 
           if uid:
             active_uids.append(uid)
