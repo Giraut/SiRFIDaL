@@ -53,7 +53,7 @@ As root:
     * Use with PC/SC readers:
 
        apt-get install pcscd pcsc-tools
-       - Configure PC/SC for your readers. If pcsc-scan works, SiRFIDaL will
+       - Configure PC/SC for your readers. If pcsc_scan works, SiRFIDaL will
          work also. See https://pcsclite.apdu.fr/
        - Make sure watch_pcsc is set to True in sirfidal_server.py
 
