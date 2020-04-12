@@ -26,7 +26,7 @@ The utilities included are:
                            screensaver automatically using authenticated RFID
                            or NFC transponders.
 
-- sirfidal_beep: program to beep when a RFID or NFCC transponder is read by a
+- sirfidal_beep: program to beep when a RFID or NFC transponder is read by a
                  reader, or taken off the reader.
 
 
