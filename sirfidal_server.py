@@ -101,7 +101,7 @@ socket_path="/tmp/sirfidal_server.socket"
 # Serial parameters
 serial_read_every=0.2 #s
 serial_reader_dev_file="/dev/ttyACM0"
-card_off_reader_timeout=1 #seconds
+uid_not_sent_inactive_timeout=1 #seconds
 
 # Server parameters
 encrypted_uids_file="/etc/sirfidal_encr_uids"
@@ -339,7 +339,7 @@ def serial_listener(main_in_q):
 
     # Remove UID timestamps that are too old from the last-seen list
     for uid in list(uid_lastseens):
-      if tstamp - uid_lastseens[uid] > card_off_reader_timeout:
+      if tstamp - uid_lastseens[uid] > uid_not_sent_inactive_timeout:
         del uid_lastseens[uid]
         send_active_uids_update=True
 

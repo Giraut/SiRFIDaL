@@ -113,7 +113,7 @@ def main():
   argparser.add_argument(
 	  "-w", "--wait",
 	  type=float,
-	  help="Delay (s) to wait for a card that authenticates the user " \
+	  help="Delay (s) to wait for a UID that authenticates the user " \
 		"(default {})".format(default_auth_wait),
           required=False
 	)
