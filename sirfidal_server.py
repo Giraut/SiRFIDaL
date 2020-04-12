@@ -7,23 +7,32 @@ list UID <-> user associations without exposing the UIDs to the processes.
 The script performs the following functions:
 
 * Background functions
-  - Handle reading RFID / NFC UIDs from different connected readers (several
-    PC/SC readers and a single serial reader may be watched concurrently)
+
+  - Handle reading RFID / NFC UIDs from different connected readers: several
+    PC/SC readers, a single serial reader and a single HID reader may be
+    watched concurrently
+
   - Internally maintain a list of of currently active UIDs - that is, the list
     of UIDs of RFID or NFC transponders currently readable by the readers at
     any given time
+
   - Manipulate the list of UID <-> user association file: read the encrypted
     UIDs file, match active UIDs against the encrypted UIDs, encrypt new UIDs
     and associate them with users, and write the file back.
 
 * Server for local frontend programs to request one of the following services:
+
   - Authenticate a user against one of the currently active UIDs, waiting for
     up to a requested time for a successful authentication
+
   - Add an authenticate user - i.e. associate a user with a single currently
     active UID and save this association in the encrypted UIDs file
+
   - Delete an authenticated user - i.e. disassociate a user from a single
     currently active UID in the encrypted UIDs file
+
   - Delete all entries for a user in the encrypted UIDs file
+
   - Watch the evolution of the number of active UIDs in real-time: not an
     authentication-related function, but a way for requesting processes to
     watch the activity on the readers without exposing the active UIDs, and
@@ -93,6 +102,7 @@ See the parameters below to configure this script.
 # Types of RFID / NFC readers to watch
 watch_pcsc=True
 watch_serial=True
+watch_hid=True
 
 # PC/SC parameters
 pcsc_read_every=0.2 #s
@@ -101,6 +111,12 @@ pcsc_read_every=0.2 #s
 serial_read_every=0.2 #s
 serial_reader_dev_file="/dev/ttyACM0"
 serial_uid_not_sent_inactive_timeout=1 #s
+
+# HID parameters
+hid_keepalive_every=0.2
+hid_reader_dev_file="/dev/input/by-id/"	\
+			"usb-ACS_ACR1281_Dual_Reader-if01-event-kbd"
+hid_simulate_uid_stays_active=1 #s
 
 # Server parameters
 max_server_connections=10
@@ -128,12 +144,15 @@ import psutil
 from time import sleep
 from select import select
 from datetime import datetime
-from smartcard.scard import *
 from signal import signal, SIGCHLD
 from filelock import FileLock, Timeout
 from multiprocessing import Process, Queue, Pipe
 from socket import socket, timeout, AF_UNIX, SOCK_STREAM, SOL_SOCKET, \
 		SO_REUSEADDR, SO_PEERCRED
+if watch_pcsc:
+  from smartcard.scard import *
+if watch_hid:
+  from evdev import InputDevice, categorize, ecodes  
 
 
 
@@ -141,24 +160,25 @@ from socket import socket, timeout, AF_UNIX, SOCK_STREAM, SOL_SOCKET, \
 MAIN_PROCESS_KEEPALIVE=0
 PCSC_LISTENER_UIDS_UPDATE=1
 SERIAL_LISTENER_UIDS_UPDATE=2
-NEW_CLIENT=3
-NEW_CLIENT_ACK=4
-VOID_REQUEST=5
-VOID_REQUEST_TIMEOUT=6
-WAITAUTH_REQUEST=7
-AUTH_RESULT=8
-AUTH_OK=9
-AUTH_NOK=10
-WATCHNBUIDS_REQUEST=11
-NBUIDS_UPDATE=12
-ADDUSER_REQUEST=13
-DELUSER_REQUEST=14
-ENCRUIDS_UPDATE=15
-ENCRUIDS_UPDATE_ERR_EXISTS=16
-ENCRUIDS_UPDATE_ERR_NONE=17
-ENCRUIDS_UPDATE_ERR_TIMEOUT=18
-CLIENT_HANDLER_STOP_REQUEST=19
-CLIENT_HANDLER_STOP=20
+HID_LISTENER_UIDS_UPDATE=3
+NEW_CLIENT=4
+NEW_CLIENT_ACK=5
+VOID_REQUEST=6
+VOID_REQUEST_TIMEOUT=7
+WAITAUTH_REQUEST=8
+AUTH_RESULT=9
+AUTH_OK=10
+AUTH_NOK=11
+WATCHNBUIDS_REQUEST=12
+NBUIDS_UPDATE=13
+ADDUSER_REQUEST=14
+DELUSER_REQUEST=15
+ENCRUIDS_UPDATE=16
+ENCRUIDS_UPDATE_ERR_EXISTS=17
+ENCRUIDS_UPDATE_ERR_NONE=18
+ENCRUIDS_UPDATE_ERR_TIMEOUT=19
+CLIENT_HANDLER_STOP_REQUEST=20
+CLIENT_HANDLER_STOP=21
 
 
 
@@ -187,7 +207,7 @@ class client:
 ### subroutines / subprocesses
 def pcsc_listener(main_in_q):
   """Periodically read the UIDs from one or several PC/SC readers and send the
-  list to the main process
+  list of active UIDs to the main process
   """
 
   # Wait for the status on the connected PC/SC readers to change and Get the
@@ -287,9 +307,9 @@ def pcsc_listener(main_in_q):
 
 def serial_listener(main_in_q):
   """Periodically read the UIDs from a single serial reader and send the list
-  to the main process. The reader must be a repeating reader - i.e. one that
-  sends the UIDs of the active transponders repeatedly as long as they're
-  readable, not just once when they're first read.
+  of active UIDs to the main process. The reader must be a repeating reader -
+  i.e. one that sends the UIDs of the active transponders repeatedly as long as
+  they're readable, not just once when they're first read.
   """
 
   fdevfile=None
@@ -348,7 +368,7 @@ def serial_listener(main_in_q):
     # If the active UIDs have changed...
     if send_active_uids_update:
 
-      # ...end the list to the main process...
+      # ...send the list to the main process...
       main_in_q.put([SERIAL_LISTENER_UIDS_UPDATE, list(uid_lastseens)])
       send_active_uids_update=False
 
@@ -357,6 +377,126 @@ def serial_listener(main_in_q):
       # ...else send a keepalive message to the main process so it can trigger
       # timeouts
       main_in_q.put([MAIN_PROCESS_KEEPALIVE])
+
+
+
+def hid_listener(main_in_q):
+  """Read UIDs from a single HID reader (aka a "keyboard wedge") and send the
+  list of active UIDs to the main process.
+
+  Sadly, almost all keyboard wedges are one-shot and not repeating readers,
+  i.e. they only send the UID once upon scanning. This routine simulates the
+  presence of a transponder in the list of active UIDs for a certain period of
+  time, then simulates its getting inactive. There is no way to assess the
+  presence of a transponder on those readers, so that's the best we can do.
+  However, that means client applications that depend on being able to assess
+  continued authentication of a UID will not work correctly.
+  """
+
+  active_uid_expires={}
+
+  SC_LSHIFT=42
+  SC_RSHIFT=54
+  SC_ENTER=28
+  KEYUP=0
+  KEYDOWN=1
+  
+  scancodes_us_kbd={
+      2: ["1", "!"],  3: ["2", "@"],  4: ["3", "#"],  5: ["4", "$"],
+      6: ["5", "%"],  7: ["6", "^"],  8: ["7", "&"],  9: ["8", "*"],
+     10: ["9", "("], 11: ["0", ")"], 12: ["-", "_"], 13: ["=", "+"], 
+     16: ["q", "Q"], 17: ["w", "W"], 18: ["e", "E"], 19: ["r", "R"], 
+     20: ["t", "T"], 21: ["y", "Y"], 22: ["u", "U"], 23: ["i", "I"], 
+     24: ["o", "O"], 25: ["p", "P"], 26: ["[", "{"], 27: ["]", "}"], 
+     30: ["a", "A"], 31: ["s", "S"], 32: ["d", "D"], 33: ["f", "F"], 
+     34: ["g", "G"], 35: ["h", "H"], 36: ["j", "J"], 37: ["k", "K"], 
+     38: ["l", "L"], 39: [";", ":"], 40: ["'", '"'], 41: ["`", "~"], 
+     43: ["\\","|"], 44: ["z", "Z"], 45: ["x", "X"], 46: ["c", "C"], 
+     47: ["v", "V"], 48: ["b", "B"], 49: ["n", "N"], 50: ["m", "M"], 
+     51: [",", "<"], 52: [".", ">"], 53: ["/", "?"], 57: [" ", " "], 
+  }
+
+  recvbuf=""
+
+  shifted=0
+
+  hiddev=None
+  send_active_uids_update=True
+
+  while True:
+
+    # Grab the HID device for exclusive use by us
+    if not hiddev:
+
+      try:
+        hiddev=InputDevice(hid_reader_dev_file)
+        hiddev.grab()
+      except:
+        if hiddev:
+          hiddev.close()
+        hiddev=None
+        sleep(2)	# Wait a bit as the device file is probably unavailable
+        continue
+
+    rlines=[]
+
+    # Wait for scancodes from the HID reader, or timeout
+    fds = select([hiddev.fd], [], [], hid_keepalive_every)[0]
+
+    now=datetime.now().timestamp()
+
+    # read scancodes
+    if fds:
+
+      for event in hiddev.read():
+
+        if event.type == ecodes.EV_KEY:
+
+          d = categorize(event)
+
+          if d.scancode == SC_LSHIFT or d.scancode == SC_RSHIFT:
+
+            if d.keystate == KEYDOWN or d.keystate == KEYUP:
+              shifted=1 if d.keystate == KEYDOWN else 0
+
+          elif d.scancode == SC_ENTER:
+
+            if recvbuf:
+
+              rlines.append(recvbuf)
+              recvbuf=""
+
+          elif d.keystate == KEYDOWN and len(recvbuf) < 256:
+              recvbuf += scancodes_us_kbd.get(d.scancode, ["", ""])[shifted]
+
+      # Process the lines from the HID reader
+      for l in rlines:
+
+        # Add or update UIDs in the expires table
+        if l not in active_uid_expires:
+          send_active_uids_update=True
+
+        active_uid_expires[l]=now + hid_simulate_uid_stays_active
+
+    # Timeout
+    else:
+
+      # Send a keepalive message to the main process so it can trigger timeouts
+      main_in_q.put([MAIN_PROCESS_KEEPALIVE])
+
+    # Drop the active UIDs that have timed out
+    for uid in list(active_uid_expires):
+
+      if now > active_uid_expires[uid]:
+
+        del(active_uid_expires[uid])
+        send_active_uids_update=True
+
+    # Sent the updated list of active UIDs to the main process if needed
+    if send_active_uids_update:
+
+      main_in_q.put([HID_LISTENER_UIDS_UPDATE, list(active_uid_expires)])
+      send_active_uids_update=False
 
 
 
@@ -690,11 +830,16 @@ def main():
   if watch_serial:
     Process(target=serial_listener, args=(main_in_q,)).start()
   
+  # Start the HID listener
+  if watch_hid:
+    Process(target=hid_listener, args=(main_in_q,)).start()
+  
 
 
   # Main process
   active_pcsc_uids=[]
   active_serial_uids=[]
+  active_hid_uids=[]
   active_uids=[]
   active_uids_prev=None
   send_active_uids_update=False
@@ -709,20 +854,20 @@ def main():
     # Skip all tests for other kinds of messages if it's a keepalive message
     if msg[0] != MAIN_PROCESS_KEEPALIVE:
 
-      # The message is an update of the active UIDs from the PC/SC listener
-      if msg[0] == PCSC_LISTENER_UIDS_UPDATE:
+      # The message is an update of the active UIDs from one of the listeners
+      if msg[0] == PCSC_LISTENER_UIDS_UPDATE or \
+		msg[0] == SERIAL_LISTENER_UIDS_UPDATE or \
+		msg[0] == HID_LISTENER_UIDS_UPDATE:
 
-        active_pcsc_uids=msg[1]
+        if msg[0] == PCSC_LISTENER_UIDS_UPDATE:
+          active_pcsc_uids=msg[1]
+        elif msg[0] == SERIAL_LISTENER_UIDS_UPDATE:
+          active_serial_uids=msg[1]
+        elif msg[0] == HID_LISTENER_UIDS_UPDATE:
+          active_hid_uids=msg[1]
+
         active_uids_prev=active_uids
-        active_uids=active_pcsc_uids + active_serial_uids
-        send_active_uids_update=True
-
-      # The message is an update of the active UIDs from the serial listener
-      elif msg[0] == SERIAL_LISTENER_UIDS_UPDATE:
-
-        active_serial_uids=msg[1]
-        active_uids_prev=active_uids
-        active_uids=active_pcsc_uids + active_serial_uids
+        active_uids=active_pcsc_uids + active_serial_uids + active_hid_uids
         send_active_uids_update=True
 
       # New client notification from a client handler

@@ -60,15 +60,22 @@ As root:
     * Use with a serial reader:
 
        - Set serial_reader_dev_file to the device file corresponding to your
-         reader in sirfidal_server.py. Make sure you have read righs.
+         reader in sirfidal_server.py
        - Make sure watch_serial is set to True in sirfidal_server.py
+
+    * Use with a HID reader [See Limitation below]:
+
+       - Set hid_reader_dev_file to the device file corresponding to your
+         reader in sirfidal_server.py
+       - Make sure watch_hid is set to True in sirfidal_server.py
 
     * Python3 modules needed (apt-get installation preferred, pip3 otherwise):
 
-      apt-get install python3-pyscard
+      apt-get install python3-pyscard	# If you want to use PC/SC readers
+      apt-get install python3-evdev	# If you want to use a HID reader
       apt-get install python3-filelock
       apt-get install python3-psutil
-      pip3 install playsound
+      pip3 install playsound		# If you want to run sirfidal_beep.py
 
   * Copy the files:
 
@@ -83,8 +90,8 @@ As root:
     systemctl enable sirfidal_server
     systemctl start sirfidal_server
 
-    systemctl enable sirfidal_beep
-    systemctl start sirfidal_beep
+    systemctl enable sirfidal_beep	# Optional
+    systemctl start sirfidal_beep	# Optional
 
   * Configure PAM for single factor authentication (password or RFID / NFC):
 
@@ -109,3 +116,26 @@ As a user:
     - Enter the command "/usr/local/bin/sirfidal_autolockscreen.py"
     - Click Add
     - Select the entry and click on the gears icon to run it now
+
+
+
+Limitation when using a HID reader or a one-shot serial device
+----------------------------------------------------------------
+
+HID readers - also called "keyboard wedges" - are one-shot instead of
+repeating devices. This means they send the UID of a transponder they've read
+only once, then stay quiet until a new read is performed.
+
+That's because they're made to emulate keyboards, to automatically enter UIDs
+in a word processor or a spreadsheet. Obviously you don't want the reader to
+fill up your document with identical UIDs.
+
+As a result, with HID readers, it's impossible to detect the presence of a
+transponder continuously. SiRFIDaL emulates a repeating device by pretending
+it stays on the reader for a short period, then leaves the reader.
+
+This emulation is sufficient for single-shot authentication. However, it
+breaks SiRFIDaL clients that rely on continuously probing active UIDs: for
+instance, sirfidal_autolockscreen won't work properly in persistent mode, and
+sirfidal_beep will play a "down" beep while the transponder is still on the
+reader.
