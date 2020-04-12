@@ -96,18 +96,20 @@ watch_serial=True
 
 # PC/SC parameters
 pcsc_read_every=0.2 #s
-socket_path="/tmp/sirfidal_server.socket"
 
 # Serial parameters
 serial_read_every=0.2 #s
 serial_reader_dev_file="/dev/ttyACM0"
-uid_not_sent_inactive_timeout=1 #seconds
+serial_uid_not_sent_inactive_timeout=1 #s
 
 # Server parameters
-encrypted_uids_file="/etc/sirfidal_encr_uids"
 max_server_connections=10
 max_auth_request_wait=60 #s
 client_force_close_socket_timeout=60 #s
+socket_path="/tmp/sirfidal_server.socket"
+
+# Encrypted UIDs file path
+encrypted_uids_file="/etc/sirfidal_encr_uids"
 
 # Names of disallowed parent process names for requesting processes
 remote_user_parent_process_names=["sshd", "telnetd"]
@@ -339,7 +341,7 @@ def serial_listener(main_in_q):
 
     # Remove UID timestamps that are too old from the last-seen list
     for uid in list(uid_lastseens):
-      if tstamp - uid_lastseens[uid] > uid_not_sent_inactive_timeout:
+      if tstamp - uid_lastseens[uid] > serial_uid_not_sent_inactive_timeout:
         del uid_lastseens[uid]
         send_active_uids_update=True
 
