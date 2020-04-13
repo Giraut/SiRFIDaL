@@ -23,23 +23,22 @@ The utilities included are:
 - sirfidal_useradm         Utility to add or delete users allowed to
                            authenticate with RFID / NFC UIDs.
 
-- sirfidal_autolockscreen  Program to lock/unlock a graphical interface
-                           screensaver automatically using authenticated RFID
-                           or NFC transponders.
-
 - sirfidal_beep            Program to beep when a RFID or NFC transponder is
                            read by a reader, or taken off the reader.
 
-- sirfidal_getuids         Continuously displays new UIDs being read by the
-                           SiRFIDaL server. This utility must be run as root,
-                           as the SiRFIDaL server will not expose actual UIDs
-                           to non-root users.
+- sirfidal_autolockscreen  Program to lock/unlock a graphical interface
+                           screensaver automatically using authenticated RFID
+                           or NFC transponders.
 
 - sirfidal_autotype        Program to automatically type custom strings in
                            predefined application windows (passwords for
                            example) upon authenticating with a RFID or NFC
                            transponder.
-                        
+
+- sirfidal_getuids         Continuously displays new UIDs being read by the
+                           SiRFIDaL server. This utility must be run as root,
+                           as the SiRFIDaL server will not expose actual UIDs
+                           to non-root users.
 
 
 
