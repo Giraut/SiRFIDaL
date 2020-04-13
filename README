@@ -12,22 +12,28 @@ these utilities!
 
 The utilities included are:
 
-- sirfidal_server: core program used by all the others. It manages RFID or NFC
-                   readers and authenticates users against RFID / NFC UIDs on
-                   behalf of other programs.
+- sirfidal_server          Core program used by all the others. It manages RFID
+                           or NFC readers and authenticates users against
+                           RFID / NFC UIDs on behalf of other programs.
 
-- sirfidal_pam: PAM module that uses the SiRFIDaL server to authenticate users
-                against RFID or NFC UIDs, typcally to login.
+- sirfidal_pam             PAM module that uses the SiRFIDaL server to
+                           authenticate users against RFID or NFC UIDs,
+                           typcally to login.
 
-- sirfidal_useradm: utility to add or delete users allowed to authenticate
-                    with RFID / NFC UIDs.
+- sirfidal_useradm         Utility to add or delete users allowed to
+                           authenticate with RFID / NFC UIDs.
 
-- sirfidal_autolockscreen: program to lock/unlock a graphical interface
+- sirfidal_autolockscreen  Program to lock/unlock a graphical interface
                            screensaver automatically using authenticated RFID
                            or NFC transponders.
 
-- sirfidal_beep: program to beep when a RFID or NFC transponder is read by a
-                 reader, or taken off the reader.
+- sirfidal_beep            Program to beep when a RFID or NFC transponder is
+                           read by a reader, or taken off the reader.
+
+- sirfidal_getuids         Continuously displays new UIDs being read by the
+                           SiRFIDaL server. This utility must be run as root,
+                           as the SiRFIDaL server will not expose actual UIDs
+                           to non-root users.
 
 
 

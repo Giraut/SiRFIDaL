@@ -39,6 +39,12 @@ The script performs the following functions:
     without having to give ordinary users permission to access the readers
     directly
 
+  - Watch the evolution of the actual list of active UIDs in real-time: not an
+    authentication-related function, but a way for requesting processes to
+    get the actual UIDs read on the readers, currently active in the server.
+    For security reasons, the server will only honor this request for client
+    processes run by root
+
 Note that clients started by non-local users (for example logged in through
 telnet or SSH) will be denied services by the server. This is on purpose: the
 server authenticates users against UIDs read from local RFID or NFC readers.
@@ -63,6 +69,11 @@ Server replies: AUTHOK
 Service:        Watch the evolution of the number of active UIDs in real-time
 Client sends:   WATCHNBUIDS
 Server replies: NBUIDS <new nb of active UIDS> <change since previous update>
+
+Service:        Watch the evolution of the list of active UIDs in real-time
+Client sends:   WATCHUIDS
+Server replies: UIDS [active UID #1] [active UID #2] [active UID #3] ...
+                NOAUTH
 
 Service:        Add a user <-> UID association in the encrypted UIDs file
 Client sends:   ADDUSER <user> <max wait (int or float) in s>
@@ -89,11 +100,11 @@ is expected to close the socket within a certain grace period. The client may
 lodge a new request within that grace period. If it doesn't, the server will
 force-close the socket at the end of the grace period.
 
-After receiving a WATCHNBUIDS request, the server continuously sends updates
-on the number of active UIDs and never closes the socket. It's up to the client
-to close its end of the socket to terminate the request. At any given time,
-the client may lodge a new request, cancelling and replacing the running
-WATCHNBUIDS request.
+After receiving a WATCHNBUIDS or WATCHUIDS request, the server continuously
+sends updates and never closes the socket. It's up to the client to close its
+end of the socket to terminate the request. At any given time, the client may
+lodge a new request, canceling and replacing the running WATCHNBUIDS or
+WATCHUIDS request.
 
 See the parameters below to configure this script.
 """
@@ -172,14 +183,16 @@ AUTH_OK=10
 AUTH_NOK=11
 WATCHNBUIDS_REQUEST=12
 NBUIDS_UPDATE=13
-ADDUSER_REQUEST=14
-DELUSER_REQUEST=15
-ENCRUIDS_UPDATE=16
-ENCRUIDS_UPDATE_ERR_EXISTS=17
-ENCRUIDS_UPDATE_ERR_NONE=18
-ENCRUIDS_UPDATE_ERR_TIMEOUT=19
-CLIENT_HANDLER_STOP_REQUEST=20
-CLIENT_HANDLER_STOP=21
+WATCHUIDS_REQUEST=14
+UIDS_UPDATE=15
+ADDUSER_REQUEST=16
+DELUSER_REQUEST=17
+ENCRUIDS_UPDATE=18
+ENCRUIDS_UPDATE_ERR_EXISTS=19
+ENCRUIDS_UPDATE_ERR_NONE=20
+ENCRUIDS_UPDATE_ERR_TIMEOUT=21
+CLIENT_HANDLER_STOP_REQUEST=22
+CLIENT_HANDLER_STOP=23
 
 
 
@@ -202,6 +215,7 @@ class client:
     self.request=None
     self.user=None
     self.expires=None
+    self.new_request=True
 
 
 
@@ -645,6 +659,12 @@ def client_handler(uid, gid, main_in_q, main_out_p, chandler_out_p, conn):
           csendbuf="NBUIDS {} {}".format(msg[1][0], msg[1][1])
           continue
 
+        # The main process reports an update in the list of active UIDs: sent
+        # it to the client
+        elif msg[0]==UIDS_UPDATE:
+          csendbuf="UIDS{}".format("".join([" " + s for s in msg[1][0]]))
+          continue
+
         # The main process reports a timeout waiting for a UID to associate
         # or disassociate with a UID
         elif msg[0]==ENCRUIDS_UPDATE_ERR_TIMEOUT:
@@ -721,6 +741,14 @@ def client_handler(uid, gid, main_in_q, main_out_p, chandler_out_p, conn):
           m=re.findall("^WATCHNBUIDS$", l)
           if m:
             main_in_q.put([WATCHNBUIDS_REQUEST, [pid]])
+
+          # WATCHUIDS request: the user must be root. If not, deny the request
+          m=re.findall("^WATCHUIDS$", l)
+          if m:
+            if uid==0:
+              main_in_q.put([WATCHUIDS_REQUEST, [pid]])
+            else:
+              csendbuf="NOAUTH"
 
           # ADDUSER request
           m=re.findall("^ADDUSER\s([^\s]+)\s([-+]?[0-9]+\.?[0-9]*)$", l)
@@ -886,7 +914,8 @@ def main():
           active_hid_uids=msg[1]
 
         active_uids_prev=active_uids
-        active_uids=active_pcsc_uids + active_serial_uids + active_hid_uids
+        active_uids=sorted(active_pcsc_uids + active_serial_uids + \
+				active_hid_uids)
         send_active_uids_update=True
 
       # New client notification from a client handler
@@ -931,6 +960,17 @@ def main():
         active_clients[msg[1][0]].user=None
         active_clients[msg[1][0]].expires=None
 
+      # The client requested to watch the evolution of the list of UIDs
+      # themselves in real time
+      elif msg[0] == WATCHUIDS_REQUEST:
+
+        # Update this client's request in the list of active requests.
+        # No timeout for this request: it's up to the client to close the
+        # socket when it's done
+        active_clients[msg[1][0]].request=WATCHUIDS_REQUEST
+        active_clients[msg[1][0]].user=None
+        active_clients[msg[1][0]].expires=None
+
       # Remove a client from the list of active clients and tell the handler
       # to stop
       elif msg[0] == CLIENT_HANDLER_STOP_REQUEST:
@@ -950,12 +990,20 @@ def main():
 
         # Request to watch the evolution of the number of active UIDs in
         # real-time: send an update if one is available
-        if send_active_uids_update and \
-		active_clients[cpid].request == WATCHNBUIDS_REQUEST and \
-		active_uids_prev != None and \
+        if active_clients[cpid].request == WATCHNBUIDS_REQUEST and \
+		send_active_uids_update and active_uids_prev != None and \
 		 len(active_uids) != len(active_uids_prev):
           active_clients[cpid].main_out_p.send([NBUIDS_UPDATE, \
 		[len(active_uids), len(active_uids) - len(active_uids_prev)]])
+
+        # Request to watch the evolution of the list of active UIDs in
+        # real-time: send an update if one is available
+        if active_clients[cpid].request == WATCHUIDS_REQUEST and \
+		active_uids_prev != None and \
+		(active_clients[cpid].new_request or \
+		(active_uids != active_uids_prev and send_active_uids_update)):
+          active_clients[cpid].main_out_p.send([UIDS_UPDATE, [active_uids]])
+          active_clients[cpid].new_request=False
 
         # Authentication request: reload the encrypted UIDs file if needed
         elif active_clients[cpid].request == WAITAUTH_REQUEST and \
