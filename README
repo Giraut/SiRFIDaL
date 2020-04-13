@@ -77,11 +77,11 @@ As root:
 
     * Python3 modules needed (apt-get installation preferred, pip3 otherwise):
 
-      apt-get install python3-pyscard	# If you want to use PC/SC readers
-      apt-get install python3-evdev	# If you want to use a HID reader
+      apt-get install python3-pyscard   # If you want to use PC/SC readers
+      apt-get install python3-evdev     # If you want to use a HID reader
       apt-get install python3-filelock
       apt-get install python3-psutil
-      pip3 install playsound		# If you want to run sirfidal_beep.py
+      pip3 install playsound            # If you want to run sirfidal_beep.py
 
   * Copy the files:
 
@@ -96,8 +96,8 @@ As root:
     systemctl enable sirfidal_server
     systemctl start sirfidal_server
 
-    systemctl enable sirfidal_beep	# Optional
-    systemctl start sirfidal_beep	# Optional
+    systemctl enable sirfidal_beep      # Optional
+    systemctl start sirfidal_beep       # Optional
 
   * Configure PAM for single factor authentication (password or RFID / NFC):
 
