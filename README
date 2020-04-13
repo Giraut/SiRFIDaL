@@ -35,6 +35,12 @@ The utilities included are:
                            as the SiRFIDaL server will not expose actual UIDs
                            to non-root users.
 
+- sirfidal_autotype        Program to automatically type custom strings in
+                           predefined application windows (passwords for
+                           example) upon authenticating with a RFID or NFC
+                           transponder.
+                        
+
 
 
 Installation instructions for the busy man
@@ -81,7 +87,8 @@ As root:
       apt-get install python3-evdev     # If you want to use a HID reader
       apt-get install python3-filelock
       apt-get install python3-psutil
-      pip3 install playsound            # If you want to run sirfidal_beep.py
+      pip3 install playsound            # If you want to run sirfidal_beep
+      pip3 install playsound            # If you want to run sirfidal_autotype
 
   * Copy the files:
 
@@ -122,6 +129,16 @@ As a user:
     - Enter the command "/usr/local/bin/sirfidal_autolockscreen.py"
     - Click Add
     - Select the entry and click on the gears icon to run it now
+
+  * Run the autotyper [Optional]:
+
+    - In Preferences > Startup Applications, click on + > Custom command
+    - Enter the name "RFID / NFC autotype" (or whatever you want)
+    - Enter the command "/usr/local/bin/sirfidal_autotype.py"
+    - Click Add
+    - Select the entry and click on the gears icon to run it now
+    - In a terminal, run "sirfidal_autotype -w <string> [-n]" to configure a
+      string to send to a particular window
 
 
 
