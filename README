@@ -88,7 +88,7 @@ As root:
       apt-get install python3-filelock
       apt-get install python3-psutil
       pip3 install playsound            # If you want to run sirfidal_beep
-      pip3 install playsound            # If you want to run sirfidal_autotype
+      pip3 install pynput               # If you want to run sirfidal_autotype
 
   * Copy the files:
 
