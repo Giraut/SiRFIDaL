@@ -138,7 +138,7 @@ fill up your document with identical UIDs.
 
 As a result, with HID readers, it's impossible to detect the presence of a
 transponder continuously. SiRFIDaL emulates a repeating device by pretending
-it stays on the reader for a short period, then leaves the reader.
+the transponder stays on the reader for a short period, then leaves the reader.
 
 This emulation is sufficient for single-shot authentication. However, it
 breaks SiRFIDaL clients that rely on continuously probing active UIDs: for
