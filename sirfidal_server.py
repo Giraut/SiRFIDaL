@@ -777,8 +777,9 @@ def is_remote_user(pid):
 
 
 def load_encruids():
-  """Read and verify the content of the encrypted UIDs file. Return a list of
-  lists of username -> encrypted UID, or None in case of a read or format error.
+  """Read and verify the content of the encrypted UIDs file, if it has been
+  modified. Return a list of lists of username -> encrypted UID, or None in
+  case of a read or format error.
   """
 
   global encruids_file_mtime
@@ -790,35 +791,35 @@ def load_encruids():
   except:
     return(None)
 
-  # Has the file changed?
+  # If the file hasn't changed, return the content we already have
   if not encruids_file_mtime:
     encruids_file_mtime=mt
   else:
     if mt <= encruids_file_mtime:
       return(encruids)
 
-  encruids_file_mtime=mt
-
   # Re-read the file
   try:
     with open(encrypted_uids_file, "r") as f:
       new_encruids=json.load(f)
   except:
-    return(encruids)
+    return(None)
 
   # Validate the structure of the JSON format
   if not isinstance(new_encruids, list):
-    return(encruids)
+    return(None)
 
   for entry in new_encruids:
     if not (
 	  isinstance(entry, list) and
+          len(entry)==2 and
 	  isinstance(entry[0], str) and
-	  isinstance(entry[0], str)
+	  isinstance(entry[1], str)
 	):
-      return(encruids)
+      return(None)
 
   # Update the encrypted UIDs currently in memory
+  encruids_file_mtime=mt
   encruids=new_encruids
   return(encruids)
 
