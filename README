@@ -125,8 +125,8 @@ As a user:
 
 
 
-Limitation when using a HID reader or a one-shot serial device
-----------------------------------------------------------------
+Limitation when using a HID reader
+----------------------------------
 
 HID readers - also called "keyboard wedges" - are one-shot instead of
 repeating devices. This means they send the UID of a transponder they've read
