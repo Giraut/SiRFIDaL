@@ -301,7 +301,8 @@ def main():
         print("    Application: {}".format(wmclass[1]))
         print("    class:       {}".format(wmclass[0]))
         print("    Title:       {}".format(wmname))
-        print()
+
+        return(0)
 
       # Create an entry (or replace an existing entry) for this window in the
       # definitions file
@@ -314,7 +315,9 @@ def main():
           curr_defsfile=[]
 
         if curr_defsfile==None:
+
             print("Error loading the definitions file")
+            return(-1)
 
         else:
           
@@ -345,6 +348,9 @@ def main():
           if not write_defsfile(new_defsfile):
 
             print("Error writing the definitions file")
+            return(-1)
+
+          return(0)
 
       # "Type" string if we find a definition matching the window currently in
       # focus
