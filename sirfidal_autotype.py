@@ -39,6 +39,7 @@ import Xlib.display
 from time import sleep
 from psutil import Process
 from getpass import getuser
+from filelock import FileLock
 from socket import socket, timeout, AF_UNIX, SOCK_STREAM, SOL_SOCKET, \
 		SO_PASSCRED
 try:
@@ -52,6 +53,8 @@ except:
 autotype_definitions_file=None
 defsfile_mtime=None
 defsfile=[]
+defsfile_lock=None
+defsfile_locked=False
 
 
 
@@ -125,6 +128,8 @@ def main():
   """Main routine
   """
   global autotype_definitions_file
+  global defsfile_lock
+  global defsfile_locked
 
   # Get the PID of our parent process, to detect if it changes later on
   ppid=Process().parent()
@@ -165,6 +170,7 @@ def main():
   autotype_definitions_file=os.path.expanduser(args.defsfile) \
 				if args.defsfile \
 				else default_autotype_definitions_file
+  defsfile_lock=FileLock(autotype_definitions_file + ".lock")
 
   # Get the user's name
   user=getuser()
@@ -201,6 +207,18 @@ def main():
       user_authenticated=False
       crecvbuf=""
 
+      # If we're asked to manipulate the definition file, lock it before
+      # the user authenticates, so another instance of the program running
+      # can't trigger an autotype while we're changing the file after the user
+      # has authenticated
+      if args.writedefstring:
+        try:
+          defsfile_lock.acquire(timeout=1)
+        except:
+          print("Error securing exclusive access to the definitions file")
+          return(-1)
+        defsfile_locked=True
+
     # Send the request to the server
     try:
       sock.sendall("WAITAUTH {} 1\n".format(user).encode("ascii"))
@@ -222,6 +240,7 @@ def main():
       clines=[]
 
       if firstauth:
+
         print("Waiting for UIDs - CTRL-C to quit...")
         firstauth=False
        
@@ -344,17 +363,33 @@ def main():
             new_defsfile.append([wmclass[1], wmclass[0], wmname, newstr])
             print("Created entry for this window")
 
+          retcode=0
+
           # Save the new definition file
           if not write_defsfile(new_defsfile):
 
             print("Error writing the definitions file")
-            return(-1)
+            retcode=-1
 
-          return(0)
+          # Release the lock to the definitions file, but sleep a bit first, in
+          # case we ran faster than another instance of the program, to give it
+          # a chance to choke on the lock and not send a string rightaway
+          sleep(1)
+          defsfile_lock.release()
+          defsfile_locked=False
+
+          return(retcode)
 
       # "Type" string if we find a definition matching the window currently in
       # focus
       else:
+
+        # Acquire the lock to the definitions file. If we can't quietly pass
+        try:
+          defsfile_lock.acquire(timeout=1)
+        except:
+          continue
+        defsfile_locked=True
 
         if not load_defsfile():
           print("Error loading the definitions file")
@@ -375,6 +410,10 @@ def main():
 
               break
 
+        # Release the lock to the definitions file
+        defsfile_lock.release()
+        defsfile_locked=False
+
     #If the server has returned a successful authentication, sleep a bit so we
     # don't run a tight loop as long as the UID is active
     if user_authenticated:
@@ -383,4 +422,12 @@ def main():
 
 # Jump to the main routine
 if __name__=="__main__":
-  sys.exit(main())
+
+  exitcode=main()
+
+  # Release lock to the definitions file if it's been acquired
+  if defsfile_locked:
+    # We probably got here if there was an error
+    defsfile_lock.release()
+
+  sys.exit(exitcode)
