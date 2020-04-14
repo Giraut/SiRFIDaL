@@ -58,8 +58,8 @@ defsfile=[]
 # Functions
 def load_defsfile():
   """Read and verify the content of the definitions file, if it has been
-  modified. Return a dictionary of window title -> string, or None in case of a
-  read or format error.
+  modified. Return a list [application, class, window title, string], or None
+  in case of a read or format error.
   """
 
   global defsfile_mtime
@@ -294,7 +294,7 @@ def main():
         print("Error getting the window in focus. Are you running in X?")
         continue
 
-      # Only print the title of the window in focus
+      # Only print the information of the window in focus
       if args.showwininfo:
 
         print("Window in focus:")
@@ -346,8 +346,8 @@ def main():
 
             print("Error writing the definitions file")
 
-      # "Type" string if we find a definition matching the title of the window
-      # currently in focus
+      # "Type" string if we find a definition matching the window currently in
+      # focus
       else:
 
         if not load_defsfile():
@@ -355,7 +355,7 @@ def main():
 
         else:
 
-          # Find a matching window title in the definitions file
+          # Find a matching window in the definitions file
           for d in defsfile:
 
             if d[0]==wmclass[1] and d[1]==wmclass[0] and d[2]==wmname:
