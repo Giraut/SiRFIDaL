@@ -360,8 +360,9 @@ def serial_listener(main_in_q):
 
           uid=fdevfile.readline().strip("\r\n")
 
-          # Strip out anything not hexadecimal and uppercase it, so it has a
-          # chance to be compatible with UIDs read by the other listeners
+          # Strip anything not hexadecimal out of the UID and uppercase it,
+          # so it has a chance to be compatible with UIDs read by the other
+          # listeners
           uid="".join([c for c in uid.upper() if c in hexdigits])
 
         else:
@@ -501,8 +502,9 @@ def hid_listener(main_in_q):
       # Process the lines from the HID reader
       for uid in rlines:
 
-        # Strip out anything not hexadecimal and uppercase it, so it has a
-        # chance to be compatible with UIDs read by the other listeners
+        # Strip anything not hexadecimal out of the UID and uppercase it,
+        # so it has a chance to be compatible with UIDs read by the other
+        # listeners
         uid="".join([c for c in uid.upper() if c in hexdigits])
 
         # Add or update UIDs in the expires table
