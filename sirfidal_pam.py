@@ -73,6 +73,7 @@ socket_path="/tmp/sirfidal_server.socket"
 import os
 import sys
 import argparse
+from time import sleep
 from socket import socket, timeout, AF_UNIX, SOCK_STREAM, SOL_SOCKET, \
 		SO_PASSCRED
 
@@ -125,14 +126,17 @@ def main():
   try:
     sock=socket(AF_UNIX, SOCK_STREAM)
   except:
+    sleep(wait_secs)
     return(-2)
   try:
     sock.setsockopt(SOL_SOCKET, SO_PASSCRED, 1)
   except:
+    sleep(wait_secs)
     return(-3)
   try:
     sock.connect(socket_path)
   except:
+    sleep(wait_secs)
     return(-4)
 
   # Make sure we never get stuck on an idle server
@@ -142,6 +146,7 @@ def main():
   try:
     sock.sendall("WAITAUTH {} {}\n".format(pam_user, wait_secs).encode("ascii"))
   except:
+    sleep(wait_secs)
     return(-5)
 
   # Get the reply - one line only
@@ -154,14 +159,17 @@ def main():
     try:
       b=sock.recv(256).decode("ascii")
     except timeout:
+      sleep(wait_secs)
       return(-6)
     except:
+      sleep(wait_secs)
       return(-7)
 
     # If we got nothing, the server has closed its end of the socket.
     if len(b)==0:
 
       sock.close()
+      sleep(wait_secs)
       return(-8)
 
     # Read one CR- or LF-terminated line
