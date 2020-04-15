@@ -80,6 +80,12 @@ As root:
          reader in sirfidal_server.py
        - Make sure watch_hid is set to True in sirfidal_server.py
 
+    * Use with an NFC-enabled Android device as a reader [See Limitation below]
+
+       apt-get install adb
+       - Configure your Android device following the instructions below
+       - Make sure watch_adb is set to True in sirfidal_server.py
+
     * Python3 modules needed (apt-get installation preferred, pip3 otherwise):
 
       apt-get install python3-pyscard   # If you want to use PC/SC readers
@@ -141,8 +147,41 @@ As a user:
 
 
 
-Limitation when using a HID reader
-----------------------------------
+Configuring an Android device as an external NFC reader for SiRFIDaL
+--------------------------------------------------------------------
+
+  * In Settings > System, enable Developer options and USB debugging:
+    https://developer.android.com/studio/debug/dev-options 
+
+  * Install Tasker:
+    https://play.google.com/store/apps/details?id=net.dinglisch.android.taskerm
+
+  * In tasker:
+
+    - in Preferences, tap the NFC Detection Enabled check box
+    - In the Profiles tab, tap the +
+    - Select Event > Net > NFC Tag
+    - In the Event Edit screen, enter "SiRFIDaL" in the ID field
+      (or whatever you want) then tap <-
+    - Select New Task
+    - Give it the name "NFC flash file" (or whatever you want)
+    - In the Task Edit window, tap +, then select Net > NFC Tag
+    - in the Action Edit screen, Leave everything blank and tap <-
+    - In the Task Edit window, tap +, then select File > Write File
+    - In the Action Edit screen, enter "nfcuid:%nfc_id" in the File field, a
+      blank space in the Text field, then tap <-
+    - In the Task Edit window, tap +, then select Task > Wait
+    - In the Action Edit screen, dial 2 seconds then tap <-
+    - In the Task Edit window, tap +, then select File > Delete File
+    - In the Action Edit screen, enter "nfcuid:%nfc_id" in the File field
+      then tap <-
+    - In the Task Edit window, tap <-
+    - In the main screen, tap the tick mark to save everything
+      
+
+
+Limitation when using a HID reader or an Android device as an external reader
+-----------------------------------------------------------------------------
 
 HID readers - also called "keyboard wedges" - are one-shot instead of
 repeating devices. This means they send the UID of a transponder they've read
@@ -161,3 +200,8 @@ breaks SiRFIDaL clients that rely on continuously probing active UIDs: for
 instance, sirfidal_autolockscreen won't work properly in persistent mode, and
 sirfidal_beep will play a "down" beep while the transponder is still on the
 reader.
+
+An NFC-enabled Android device used as an external reader with the Tasker
+configuration above has the same limitation, because Tasker can only get
+NFC read events from Android, and also emulates a repeating device with the
+create-file-wait-delete-file trick.

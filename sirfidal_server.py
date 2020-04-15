@@ -9,8 +9,8 @@ The script performs the following functions:
 * Background functions
 
   - Handle reading RFID / NFC UIDs from different connected readers: several
-    PC/SC readers, a single serial reader and a single HID reader may be
-    watched concurrently
+    PC/SC readers, a single serial reader, a single HID reader and an Android
+    device used as an external NFC reader may be watched concurrently
 
   - Internally maintain a list of of currently active UIDs - that is, the list
     of UIDs of RFID or NFC transponders currently readable by the readers at
@@ -114,6 +114,7 @@ See the parameters below to configure this script.
 watch_pcsc=True
 watch_serial=True
 watch_hid=True
+watch_adb=True	# Android device used as an external NFC reader
 
 # PC/SC parameters
 pcsc_read_every=0.2 #s
@@ -124,10 +125,16 @@ serial_reader_dev_file="/dev/ttyACM0"
 serial_uid_not_sent_inactive_timeout=1 #s
 
 # HID parameters
-hid_keepalive_every=0.2
+hid_read_every=0.2
 hid_reader_dev_file="/dev/input/by-id/"	\
 			"usb-ACS_ACR1281_Dual_Reader-if01-event-kbd"
 hid_simulate_uid_stays_active=1 #s
+
+# ADB parameters
+adb_read_every=0.2
+adb_client="/usr/bin/adb"
+adb_file_path_on_target="/storage/self/primary"
+adb_nfcuid_filename_prefix="nfcuid:"
 
 # Server parameters
 max_server_connections=10
@@ -157,6 +164,7 @@ from select import select
 from string import hexdigits
 from datetime import datetime
 from signal import signal, SIGCHLD
+from subprocess import Popen, DEVNULL, PIPE
 from filelock import FileLock, Timeout
 from multiprocessing import Process, Queue, Pipe
 from socket import socket, timeout, AF_UNIX, SOCK_STREAM, SOL_SOCKET, \
@@ -173,26 +181,27 @@ MAIN_PROCESS_KEEPALIVE=0
 PCSC_LISTENER_UIDS_UPDATE=1
 SERIAL_LISTENER_UIDS_UPDATE=2
 HID_LISTENER_UIDS_UPDATE=3
-NEW_CLIENT=4
-NEW_CLIENT_ACK=5
-VOID_REQUEST=6
-VOID_REQUEST_TIMEOUT=7
-WAITAUTH_REQUEST=8
-AUTH_RESULT=9
-AUTH_OK=10
-AUTH_NOK=11
-WATCHNBUIDS_REQUEST=12
-NBUIDS_UPDATE=13
-WATCHUIDS_REQUEST=14
-UIDS_UPDATE=15
-ADDUSER_REQUEST=16
-DELUSER_REQUEST=17
-ENCRUIDS_UPDATE=18
-ENCRUIDS_UPDATE_ERR_EXISTS=19
-ENCRUIDS_UPDATE_ERR_NONE=20
-ENCRUIDS_UPDATE_ERR_TIMEOUT=21
-CLIENT_HANDLER_STOP_REQUEST=22
-CLIENT_HANDLER_STOP=23
+ADB_LISTENER_UIDS_UPDATE=4
+NEW_CLIENT=5
+NEW_CLIENT_ACK=6
+VOID_REQUEST=7
+VOID_REQUEST_TIMEOUT=8
+WAITAUTH_REQUEST=9
+AUTH_RESULT=10
+AUTH_OK=11
+AUTH_NOK=12
+WATCHNBUIDS_REQUEST=13
+NBUIDS_UPDATE=14
+WATCHUIDS_REQUEST=15
+UIDS_UPDATE=16
+ADDUSER_REQUEST=17
+DELUSER_REQUEST=18
+ENCRUIDS_UPDATE=19
+ENCRUIDS_UPDATE_ERR_EXISTS=20
+ENCRUIDS_UPDATE_ERR_NONE=21
+ENCRUIDS_UPDATE_ERR_TIMEOUT=22
+CLIENT_HANDLER_STOP_REQUEST=23
+CLIENT_HANDLER_STOP=24
 
 
 
@@ -471,7 +480,7 @@ def hid_listener(main_in_q):
     rlines=[]
 
     # Wait for scancodes from the HID reader, or timeout
-    fds = select([hiddev.fd], [], [], hid_keepalive_every)[0]
+    fds = select([hiddev.fd], [], [], hid_read_every)[0]
 
     now=datetime.now().timestamp()
 
@@ -532,6 +541,111 @@ def hid_listener(main_in_q):
 
       main_in_q.put([HID_LISTENER_UIDS_UPDATE, list(active_uid_expires)])
       send_active_uids_update=False
+
+
+
+def adb_listener(main_in_q):
+  """Run a shell on an Android cellphone with USB debugging enabled with the
+  external adb utility, get it to continuously list files in a certain
+  directory with a certain prefix, and capture the lines from the shell.If
+  lines are coming through, extract the UID from the file path.
+
+  In conjunction with a Tasker script that creates a file with the prefix
+  followed by the %nfc_id variables in the name upon scanning an NFC tag, waits
+  a bit, then deletes the file, we can turn an Android cellphone into an
+  computer-attached NFC reader of sorts, that this server can use to
+  authenticate users.
+
+  It's a bit hacky though...
+  """
+
+  adb_stdout=[None]
+
+  # SIGCHLD handler to reap defunct adb processes when they quit
+  def sigchld_handler(sig, fname):
+    os.wait()
+    adb_stdout[0]=None
+
+  signal(SIGCHLD, sigchld_handler)
+
+  adb_shell_command=[adb_client, "shell",
+	"while [ 1 ];do ls {d}/{p}*;sleep {s}||sleep 1;done 2>/dev/null".format(
+		d=adb_file_path_on_target,
+		p=adb_nfcuid_filename_prefix,
+		s=adb_read_every)]
+
+  uid_lastseens={}
+  send_active_uids_update=True
+
+  while True:
+
+    uid=None
+
+    # Try to spawn an adb client
+    if not adb_stdout[0]:
+      try:
+        adb_stdout[0]=Popen(adb_shell_command,
+			 stdout=PIPE, stderr=DEVNULL).stdout
+      except KeyboardInterrupt:
+        return(-1)
+      except:
+        adb_stdout[0]=None
+
+    if not adb_stdout[0]:
+      sleep(2)	# Wait a bit before trying to respawn a new adb client
+      continue
+
+    # Read ls command outputs from adb
+    try:
+      if(select([adb_stdout[0]], [], [], adb_read_every)[0]):
+
+        l=adb_stdout[0].readline().decode("ascii").strip()
+
+        # Extract UIDs from properly-prefixed filenames
+        m=re.findall("^.*{}(.*)$".format(adb_nfcuid_filename_prefix), l)
+        if m:
+
+          # Strip anything not hexadecimal out of the UID and uppercase it,
+          # so it has a chance to be compatible with UIDs read by the other
+          # listeners
+          uid="".join([c for c in m[0].upper() if c in hexdigits])
+
+        else:
+          uid=None
+    except KeyboardInterrupt:
+      return(-1)
+    except:
+      adb_stdout[0]=None
+      uid=None
+      sleep(2)	# Wait a bit before trying to respawn a new adb client
+      continue
+
+    tstamp=int(datetime.now().timestamp())
+
+    # If we got a UID, add or update its timestamp in the last-seen list
+    if uid:
+      if uid not in uid_lastseens:
+        send_active_uids_update=True
+      uid_lastseens[uid]=tstamp
+
+    # Remove UID timestamps that are too old from the last-seen list
+    for uid in list(uid_lastseens):
+      if tstamp - uid_lastseens[uid] > serial_uid_not_sent_inactive_timeout:
+        del uid_lastseens[uid]
+        send_active_uids_update=True
+
+    # If the active UIDs have changed...
+    if send_active_uids_update:
+
+      # ...send the list to the main process...
+      main_in_q.put([ADB_LISTENER_UIDS_UPDATE, list(uid_lastseens)])
+      send_active_uids_update=False
+
+    else:
+
+      # ...else send a keepalive message to the main process so it can trigger
+      # timeouts
+      main_in_q.put([MAIN_PROCESS_KEEPALIVE])
 
 
 
@@ -734,33 +848,35 @@ def client_handler(uid, gid, main_in_q, main_out_p, chandler_out_p, conn):
         # Process client requests
         for l in clines:
 
-          # WAITAUTH request
-          m=re.findall("^WAITAUTH\s([^\s]+)\s([-+]?[0-9]+\.?[0-9]*)$", l)
-          if m:
-            main_in_q.put([WAITAUTH_REQUEST, [pid, m[0][0], float(m[0][1])]])
-
           # WATCHNBUIDS request
-          m=re.findall("^WATCHNBUIDS$", l)
-          if m:
+          if l=="WATCHNBUIDS":
             main_in_q.put([WATCHNBUIDS_REQUEST, [pid]])
 
           # WATCHUIDS request: the user must be root. If not, deny the request
-          m=re.findall("^WATCHUIDS$", l)
-          if m:
+          elif l=="WATCHUIDS":
             if uid==0:
               main_in_q.put([WATCHUIDS_REQUEST, [pid]])
             else:
               csendbuf="NOAUTH"
 
-          # ADDUSER request
-          m=re.findall("^ADDUSER\s([^\s]+)\s([-+]?[0-9]+\.?[0-9]*)$", l)
-          if m:
-            main_in_q.put([ADDUSER_REQUEST, [pid, m[0][0], float(m[0][1])]])
+          else:
+            # WAITAUTH request
+            m=re.findall("^WAITAUTH\s([^\s]+)\s([-+]?[0-9]+\.?[0-9]*)$", l)
+            if m:
+              main_in_q.put([WAITAUTH_REQUEST, [pid, m[0][0], float(m[0][1])]])
 
-          # DELUSER request
-          m=re.findall("^DELUSER\s([^\s]+)\s([-+]?[0-9]+\.?[0-9]*)$", l)
-          if m:
-            main_in_q.put([DELUSER_REQUEST, [pid, m[0][0], float(m[0][1])]])
+            else:
+              # ADDUSER request
+              m=re.findall("^ADDUSER\s([^\s]+)\s([-+]?[0-9]+\.?[0-9]*)$", l)
+              if m:
+                main_in_q.put([ADDUSER_REQUEST, [pid, m[0][0], float(m[0][1])]])
+
+              else:
+                # DELUSER request
+                m=re.findall("^DELUSER\s([^\s]+)\s([-+]?[0-9]+\.?[0-9]*)$", l)
+                if m:
+                  main_in_q.put([DELUSER_REQUEST, [pid, m[0][0], \
+				float(m[0][1])]])
 
 
 
@@ -884,12 +1000,17 @@ def main():
   if watch_hid:
     Process(target=hid_listener, args=(main_in_q,)).start()
   
+  # Start the ADB listener
+  if watch_adb:
+    Process(target=adb_listener, args=(main_in_q,)).start()
+  
 
 
   # Main process
   active_pcsc_uids=[]
   active_serial_uids=[]
   active_hid_uids=[]
+  active_adb_uids=[]
   active_uids=[]
   active_uids_prev=None
   send_active_uids_update=False
@@ -907,7 +1028,8 @@ def main():
       # The message is an update of the active UIDs from one of the listeners
       if msg[0] == PCSC_LISTENER_UIDS_UPDATE or \
 		msg[0] == SERIAL_LISTENER_UIDS_UPDATE or \
-		msg[0] == HID_LISTENER_UIDS_UPDATE:
+		msg[0] == HID_LISTENER_UIDS_UPDATE or \
+		msg[0] == ADB_LISTENER_UIDS_UPDATE:
 
         if msg[0] == PCSC_LISTENER_UIDS_UPDATE:
           active_pcsc_uids=msg[1]
@@ -915,10 +1037,12 @@ def main():
           active_serial_uids=msg[1]
         elif msg[0] == HID_LISTENER_UIDS_UPDATE:
           active_hid_uids=msg[1]
+        elif msg[0] == ADB_LISTENER_UIDS_UPDATE:
+          active_adb_uids=msg[1]
 
         active_uids_prev=active_uids
         active_uids=sorted(active_pcsc_uids + active_serial_uids + \
-				active_hid_uids)
+				active_hid_uids + active_adb_uids)
         send_active_uids_update=True
 
       # New client notification from a client handler
