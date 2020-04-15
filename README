@@ -130,7 +130,7 @@ As a user:
   * Run the automatic screensaver locker / unlocker [Optional]:
 
     - In Preferences > Startup Applications, click on + > Custom command
-    - Enter the name "RFID / NFC lock / unlock screen" (or whatever you want)
+    - Enter the name "RFID NFC lock unlock screen" (or whatever you want)
     - Enter the command "/usr/local/bin/sirfidal_autolockscreen.py"
     - Click Add
     - Select the entry and click on the gears icon to run it now
@@ -138,7 +138,7 @@ As a user:
   * Run the autotyper [Optional]:
 
     - In Preferences > Startup Applications, click on + > Custom command
-    - Enter the name "RFID / NFC autotype" (or whatever you want)
+    - Enter the name "RFID NFC autotype" (or whatever you want)
     - Enter the command "/usr/local/bin/sirfidal_autotype.py"
     - Click Add
     - Select the entry and click on the gears icon to run it now
