@@ -85,15 +85,10 @@ As root:
        apt-get install adb
        - Configure your Android device following the instructions below
        - Make sure watch_adb is set to True in sirfidal_server.py
-       - If you have an older Android device, you might have to change the path
-         of the main storage space in sirfidal_server.py: for instance, you
-         might have to set adb_file_path_on_target to /storage/emulated/legacy.
-         If it still doesn't work, you will have to launch adb shell manually
-         and look for it on your particular device. The idea is to match where
-         Tasker drops the file and where sirfidal_server.py looks for it.
-       - When connecting for the first time, your android device will show a
-         popup asking you if you want to allow USB debugging: check "Always
-         allow from this computer" and tap Ok.
+       - When connecting your Android device to the computer running the
+         SiRFIDaL server for the first time, it will ask you if you want to
+         allow USB debugging: check "Always allow from this computer" and
+         tap Ok.
 
     * Python3 modules needed (apt-get installation preferred, pip3 otherwise):
 
@@ -168,21 +163,17 @@ Configuring an Android device as an external NFC reader for SiRFIDaL
   * In tasker:
 
     - In Preferences > Monitor, tap the NFC Detection Enabled check box
-    - In the Profiles tab, tap the +
+    - In the Profiles tab, tap +
     - Select Event > Net > NFC Tag
-    - In the Event Edit screen, enter "SiRFIDaL" in the ID field
-      (or whatever you want) then tap <-
-    - Select New Task
-    - Give it the name "NFC flash file" (or whatever you want)
+    - In the Event Edit screen, tap <-
+    - Select New Task and tap the tick mark
     - In the Task Edit window, tap +, then select Net > NFC Tag
     - in the Action Edit screen, Leave everything blank and tap <-
-    - In the Task Edit window, tap +, then select File > Write File
-    - In the Action Edit screen, enter "nfcuid:%nfc_id" in the File field, a
-      blank space in the Text field, then tap <-
-    - In the Task Edit window, tap +, then select Task > Wait
-    - In the Action Edit screen, dial 2 seconds then tap <-
-    - In the Task Edit window, tap +, then select File > Delete File
-    - In the Action Edit screen, enter "nfcuid:%nfc_id" in the File field
+    - In the Task Edit window, tap + again, then select Code > Run Shell
+    - In the Action Edit screen, enter the following line in the Command field:
+
+      f=$EXTERNAL_STORAGE/nfcuid:%nfc_id;>$f;sleep 2;rm $f
+
       then tap <-
     - In the Task Edit window, tap <-
     - In the main screen, tap the tick mark to save everything

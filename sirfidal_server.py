@@ -133,7 +133,7 @@ hid_simulate_uid_stays_active=1 #s
 # ADB parameters
 adb_read_every=0.2
 adb_client="/usr/bin/adb"
-adb_file_path_on_target="/storage/self/primary"
+adb_file_path_on_target="$EXTERNAL_STORAGE"
 adb_nfcuid_filename_prefix="nfcuid:"
 
 # Server parameters
