@@ -1153,7 +1153,7 @@ def main():
 		len(active_uids)==1:
 
           # Load the current encrypted UIDs file
-          new_encruids=load_encruids()
+          new_encruids=load_encruids().copy()
           if new_encruids==None:
             new_encruids=[]
 

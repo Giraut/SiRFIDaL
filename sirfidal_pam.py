@@ -118,9 +118,16 @@ def main():
 		"(default {})".format(default_auth_wait),
           required=False
 	)
+  argparser.add_argument(
+	  "-u", "--user",
+	  type=str,
+	  help="Username to override the PAM_USER environment variable",
+          required=False
+	)
   args=argparser.parse_args()
 
   wait_secs=args.wait if args.wait!=None else default_auth_wait
+  pam_user=args.user if args.user else pam_user
 
   # Open a socket to the auth server
   try:
