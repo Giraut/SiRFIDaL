@@ -167,7 +167,7 @@ Configuring an Android device as an external NFC reader for SiRFIDaL
 
   * In tasker:
 
-    - in Preferences, tap the NFC Detection Enabled check box
+    - In Preferences > Monitor, tap the NFC Detection Enabled check box
     - In the Profiles tab, tap the +
     - Select Event > Net > NFC Tag
     - In the Event Edit screen, enter "SiRFIDaL" in the ID field
