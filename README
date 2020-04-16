@@ -85,6 +85,15 @@ As root:
        apt-get install adb
        - Configure your Android device following the instructions below
        - Make sure watch_adb is set to True in sirfidal_server.py
+       - If you have an older Android device, you might have to change the path
+         of the main storage space in sirfidal_server.py: for instance, you
+         might have to set adb_file_path_on_target to /storage/emulated/legacy.
+         If it still doesn't work, you will have to launch adb shell manually
+         and look for it on your particular device. The idea is to match where
+         Tasker drops the file and where sirfidal_server.py looks for it.
+       - When connecting for the first time, your android device will show a
+         popup asking you if you want to allow USB debugging: check "Always
+         allow from this computer" and tap Ok.
 
     * Python3 modules needed (apt-get installation preferred, pip3 otherwise):
 
