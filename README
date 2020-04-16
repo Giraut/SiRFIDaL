@@ -118,8 +118,8 @@ As root:
 
   * Configure PAM for two-factor authentication (password and RFID / NFC):
 
-    - Edit /usr/share/pam-configs/unix and replace "success=end" with
-      "success=ok" in the Auth sections
+    - Edit /usr/share/pam-configs/unix and replace "success=end default=ignore"
+      with "success=ok" in the Auth sections
 
   * Finalize PAM configuration
 

@@ -1,0 +1,209 @@
+                  Sample SiRFIDaL PAM configuration scenarios
+                  -------------------------------------------
+
+This document lists a few PAM configuration scenarios, to show how to combine
+password entry and one or more RFID transponders to achieve different
+authentication schemes. It assumes the primary PAM configuration files are
+stored in /usr/share/pam-config, and the working PAM configuration files in
+/etc/pam.conf and /etc/pam.d are generated automatically from the primary
+configuration files automatically by pam-auth-update - as they should be.
+
+The contents of the files below are just examples. Please adapt them to your
+particular configuration! Also, they only list the "Auth:" sections, which is
+what concerns us here.
+
+Some familiarity with how the PAM system works is helpful to understand what
+goes on in the configuration scenarios below.
+
+
+
+* Scenario #1: 1FA: either user's password or user's RFID transponder required
+               to authenticate
+
+* Decription:  The user is promted for a password first, then if it fails, the
+               user has 2 seconds to present their RFID transponder to the
+               reader. If either the password or the RFID authentications
+               succeeds, the user is authenticated.
+
+* Configuration files:
+
+  - /usr/share/pam-config/unix
+
+Name: Unix authentication
+Default: yes
+Priority: 256
+Auth-Type: Primary
+Auth:
+  [success=end default=ignore]  pam_unix.so nodelay nullok_secure try_first_pass
+Auth-Initial:
+  [success=end default=ignore]  pam_unix.so nodelay nullok_secure
+...
+
+  - /usr/share/pam-config/sirfidal_pam.config
+
+Name: SiRFIDaL RFID / NFC UID authentication
+Default: yes
+Priority: 192
+Auth-Type: Primary
+Auth:
+  [success=end default=ignore]  pam_exec.so quiet /usr/local/bin/sirfidal_pam.py
+Auth-Initial:
+  [success=end default=ignore]  pam_exec.so quiet /usr/local/bin/sirfidal_pam.py
+
+
+
+* Scenario #2: 2FA: both user's password and user's RFID transponder required
+                    to authenticate
+
+* Decription:  The user is promted for a password first, then has 2 seconds to
+               present their RFID transponder to the reader. Both password and
+               RFID authentications must succeed for the user to be
+               authenticated.
+
+* Configuration files:
+
+  - /usr/share/pam-config/unix
+
+Name: Unix authentication
+Default: yes
+Priority: 256
+Auth-Type: Primary
+Auth:
+  [success=ok]  pam_unix.so nodelay nullok_secure try_first_pass
+Auth-Initial:
+  [success=ok]  pam_unix.so nodelay nullok_secure
+...
+
+  - /usr/share/pam-config/sirfidal_pam.config
+
+Name: SiRFIDaL RFID / NFC UID authentication
+Default: yes
+Priority: 192
+Auth-Type: Primary
+Auth:
+  [success=end default=ignore]  pam_exec.so quiet /usr/local/bin/sirfidal_pam.py
+Auth-Initial:
+  [success=end default=ignore]  pam_exec.so quiet /usr/local/bin/sirfidal_pam.py
+
+
+
+* Scenario #3: 1FA: either user's password, user's RFID transponder or master
+                    RFID transponder required to authenticate
+
+* Decription:  An employee is promted for a password first. If it fails, the
+               employee or the evil boss have 2 seconds to present either
+               the employee's RFID transponder or a master RFID transponder
+               to the reader. If either the employee's password, employee's RFID
+               or the evil boss' RFID authentication succeed, the user is
+               authenticated.
+
+* Configuration files:
+
+  - /usr/share/pam-config/unix
+
+Name: Unix authentication
+Default: yes
+Priority: 256
+Auth-Type: Primary
+Auth:
+  [success=end default=ignore]  pam_unix.so nodelay nullok_secure try_first_pass
+Auth-Initial:
+  [success=end default=ignore]  pam_unix.so nodelay nullok_secure
+...
+
+  - /usr/share/pam-config/sirfidal_pam.config_1
+
+Name: SiRFIDaL RFID / NFC UID authentication - User
+Default: yes
+Priority: 192
+Auth-Type: Primary
+Auth:
+  [success=end default=ignore]  pam_exec.so quiet /usr/local/bin/sirfidal_pam.py
+Auth-Initial:
+  [success=end default=ignore]  pam_exec.so quiet /usr/local/bin/sirfidal_pam.py
+
+  - /usr/share/pam-config/sirfidal_pam.config_2
+
+Name: SiRFIDaL RFID / NFC UID authentication - Master
+Default: yes
+Priority: 128
+Auth-Type: Primary
+Auth:
+  [success=end default=ignore]  pam_exec.so quiet /usr/local/bin/sirfidal_pam.py -u master -w 0
+Auth-Initial:
+  [success=end default=ignore]  pam_exec.so quiet /usr/local/bin/sirfidal_pam.py -u master -w 0
+
+* Notes:
+
+For this to work, the master UID needs to be registered as an authenticated
+SiRFIDaL user "master" with sirfidal_useradm:
+
+sirfidal_useradm -a master
+
+It only needs to be done once. The "master" user doesn't have to exist as a
+Unix user, as it's only known to SiRFIDaL.
+Also, note that a normal user doesn't even have to be registered as a SiRFIDaL
+user at all for the master UID to authenticate the user.
+
+
+
+* Scenario #4: 3FA with two RFID or NFC readers: master UID, user UID and user
+               password all required
+
+* Description: An employee may only login with the supervisor's permission:
+               the supervisor's master transponder is present on one reader,
+               the employee's transponder is present on the other reader, and
+               the employee must enter their password for the authentication
+               to succeed.
+
+* Configuration files:
+
+  - /usr/share/pam-config/unix
+
+Name: Unix authentication
+Default: yes
+Priority: 256
+Auth-Type: Primary
+Auth:
+  [success=ok]  pam_unix.so nodelay nullok_secure try_first_pass
+Auth-Initial:
+  [success=ok]  pam_unix.so nodelay nullok_secure
+...
+
+  - /usr/share/pam-config/sirfidal_pam.config_supervisor
+
+Name: SiRFIDaL RFID / NFC UID authentication - Supervisor
+Default: yes
+Priority: 192
+Auth-Type: Primary
+Auth:
+  [success=ok default=1]  pam_exec.so quiet /usr/local/bin/sirfidal_pam.py -u supervisor -w 0
+Auth-Initial:
+  [success=ok default=1]  pam_exec.so quiet /usr/local/bin/sirfidal_pam.py -u supervisor -w 0
+
+  - /usr/share/pam-config/sirfidal_pam.config_user
+
+Name: SiRFIDaL RFID / NFC UID authentication - User
+Default: yes
+Priority: 128
+Auth-Type: Primary
+Auth:
+  [success=end default=ignore]  pam_exec.so quiet /usr/local/bin/sirfidal_pam.py -w 0
+Auth-Initial:
+  [success=end default=ignore]  pam_exec.so quiet /usr/local/bin/sirfidal_pam.py -w 0
+
+* Notes:
+
+For this to work, the supervisor's UID needs to be registered as authenticated
+SiRFIDaL user "supervisor" with sirfidal_useradm:
+
+sirfidal_useradm -a supervisor
+
+It only needs to be done once. The "supervisor" user doesn't have to exist as a
+Unix user, as it's only known to SiRFIDaL.
+
+In this configuration, if either the supervisor's transponder or the employee's
+transponder isn't on a reader, the authentication fails immediately after
+entering the password. It's okay as even if an evil employee tried to
+brute-force the password with a script when the supervisor isn't around,
+they could never log in successfully.
