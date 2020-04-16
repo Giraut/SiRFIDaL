@@ -160,23 +160,33 @@ Configuring an Android device as an external NFC reader for SiRFIDaL
   * Install Tasker:
     https://play.google.com/store/apps/details?id=net.dinglisch.android.taskerm
 
-  * In tasker:
+  * In Preferences > Monitor, tap the NFC Detection Enabled check box
 
-    - In Preferences > Monitor, tap the NFC Detection Enabled check box
-    - In the Profiles tab, tap +
-    - Select Event > Net > NFC Tag
-    - In the Event Edit screen, tap <-
-    - Select New Task and tap the tick mark
-    - In the Task Edit window, tap +, then select Net > NFC Tag
-    - in the Action Edit screen, Leave everything blank and tap <-
-    - In the Task Edit window, tap + again, then select Code > Run Shell
-    - In the Action Edit screen, enter the following line in the Command field:
+  * Install the script in tasker:
 
-      f=$EXTERNAL_STORAGE/nfcuid:%nfc_id;>$f;sleep 2;rm $f
+    - File import method:
 
-      then tap <-
-    - In the Task Edit window, tap <-
-    - In the main screen, tap the tick mark to save everything
+      . Copy the sirfidal_tasker_script.xml file to your Android device
+      . In the Profiles tab, tap Profiles then select Import Profile
+      . Select the storage location you copied the file to then select the file
+      . In the main screen, tap the tick mark to save everything
+
+    - Entering the script manually if the import fails:
+
+      . In the Profiles tab, tap +
+      . Select Event > Net > NFC Tag
+      . In the Event Edit screen, tap <-
+      . Select New Task and tap the tick mark
+      . In the Task Edit window, tap +, then select Net > NFC Tag
+      . in the Action Edit screen, Leave everything blank and tap <-
+      . In the Task Edit window, tap + again, then select Code > Run Shell
+      . In the Action Edit screen, enter the line below in the Command field:
+
+        f=$EXTERNAL_STORAGE/nfcuid:%nfc_id;>$f;sleep 2;rm $f
+
+        then tap <-
+      . In the Task Edit window, tap <-
+      . In the main screen, tap the tick mark to save everything
       
 
 

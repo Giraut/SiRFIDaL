@@ -1,0 +1,19 @@
+<TaskerData sr="">
+  <Profile sr="p">
+    <mid0>1</mid0>
+    <nme>SiRFIDaL NFC reader</nme>
+    <Event sr="con0">
+      <code>2076</code>
+    </Event>
+  </Profile>
+  <Task sr="t">
+    <id>1</id>
+    <Action sr="act0">
+      <code>330</code>
+    </Action>
+    <Action sr="act1">
+      <code>123</code>
+      <Str sr="arg0" ve="3">f=$EXTERNAL_STORAGE/nfcuid:%nfc_id;&gt;$f;sleep 2;rm $f</Str>
+    </Action>
+  </Task>
+</TaskerData>
