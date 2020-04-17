@@ -164,8 +164,9 @@ from select import select
 from string import hexdigits
 from datetime import datetime
 from signal import signal, SIGCHLD
-from subprocess import Popen, DEVNULL, PIPE
+from setproctitle import setproctitle
 from filelock import FileLock, Timeout
+from subprocess import Popen, DEVNULL, PIPE
 from multiprocessing import Process, Queue, Pipe
 from socket import socket, timeout, AF_UNIX, SOCK_STREAM, SOL_SOCKET, \
 		SO_REUSEADDR, SO_PEERCRED
@@ -233,6 +234,8 @@ def pcsc_listener(main_in_q):
   """Periodically read the UIDs from one or several PC/SC readers and send the
   list of active UIDs to the main process
   """
+
+  setproctitle("sirfidal_server_pcsc_listener")
 
   # Wait for the status on the connected PC/SC readers to change and Get the
   # list of active PC/SC UIDs when it does
@@ -344,6 +347,8 @@ def serial_listener(main_in_q):
   they're readable, not just once when they're first read.
   """
 
+  setproctitle("sirfidal_server_serial_listener")
+
   fdevfile=None
   uid_lastseens={}
   send_active_uids_update=True
@@ -431,6 +436,8 @@ def hid_listener(main_in_q):
   However, that means client applications that depend on being able to assess
   continued authentication of a UID will not work correctly.
   """
+
+  setproctitle("sirfidal_server_hid_listener")
 
   active_uid_expires={}
 
@@ -559,6 +566,8 @@ def adb_listener(main_in_q):
   It's a bit hacky though...
   """
 
+  setproctitle("sirfidal_server_adb_listener")
+
   adb_stdout=[None]
 
   # SIGCHLD handler to reap defunct adb processes when they quit
@@ -650,6 +659,8 @@ def server(main_in_q, sock):
   """Handle client connections to the server
   """
 
+  setproctitle("sirfidal_server_client_server")
+
   # SIGCHLD handler to reap defunct client handlers when they exit
   def sigchld_handler(sig, fname):
     os.wait()
@@ -676,6 +687,7 @@ def server(main_in_q, sock):
 
     # Spawn a client handler
     Process(target=client_handler, args=(
+		  pid,
 		  uid,
 		  gid,
 		  main_in_q,
@@ -686,9 +698,11 @@ def server(main_in_q, sock):
     
 
 
-def client_handler(uid, gid, main_in_q, main_out_p, chandler_out_p, conn):
+def client_handler(pid, uid, gid, main_in_q, main_out_p, chandler_out_p, conn):
   """Handler communications between the client and the main process
   """
+
+  setproctitle("sirfidal_server_client_handler_{}".format(pid))
 
   # Drop our privileges to that of the client, so we can't write to the
   # encrypted file if the calling process can't either. Also set umask so
@@ -710,8 +724,6 @@ def client_handler(uid, gid, main_in_q, main_out_p, chandler_out_p, conn):
   # Client send buffer
   csendbuf=""
 
-  pid=os.getpid()
-
   force_stop_tstamp=None
 
   # Inform the main process that we have a new client
@@ -722,13 +734,14 @@ def client_handler(uid, gid, main_in_q, main_out_p, chandler_out_p, conn):
 
     # Do we have something to send to the client?
     if(csendbuf):
-      try:
-        conn.sendall((csendbuf + "\n").encode("ascii"))
-      except:	# oops, the socket was closed
-        # inform the main process we want to stop and close the socket.
-        main_in_q.put([client_handler_stop_request, [pid, main_out_p]])
-        conn.close()
-        conn=none
+      if(conn):
+        try:
+          conn.sendall((csendbuf + "\n").encode("ascii"))
+        except:	# oops, the socket was closed
+          # inform the main process we want to stop and close the socket.
+          main_in_q.put([client_handler_stop_request, [pid, main_out_p]])
+          conn.close()
+          conn=none
       csendbuf=""
 
     # Wait for either the main process of the client to send us something
@@ -958,6 +971,8 @@ def write_encruids(new_encruids):
 def main():
   """Main routine
   """
+
+  setproctitle("sirfidal_server")
 
   # Main routine's input queue
   main_in_q=Queue()
