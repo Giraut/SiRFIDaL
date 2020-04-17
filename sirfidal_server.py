@@ -569,10 +569,13 @@ def adb_listener(main_in_q):
   signal(SIGCHLD, sigchld_handler)
 
   adb_shell_command=[adb_client, "shell",
-	"while [ 1 ];do ls {d}/{p}*;sleep {s}||sleep 1;done 2>/dev/null".format(
-		d=adb_file_path_on_target,
-		p=adb_nfcuid_filename_prefix,
-		s=adb_read_every)]
+	"while [ 1 ];do ls -1 {d}/{p}*;sleep {s}||sleep {l};done 2>/dev/null".
+		format(
+		  d=adb_file_path_on_target,
+		  p=adb_nfcuid_filename_prefix,
+		  s=adb_read_every,
+		  l=round(adb_read_every) if round(adb_read_every) > 0 else 1
+		)]
 
   uid_lastseens={}
   send_active_uids_update=True
@@ -595,23 +598,17 @@ def adb_listener(main_in_q):
       sleep(2)	# Wait a bit before trying to respawn a new adb client
       continue
 
-    # Read ls command outputs from adb
+    # Read ls command outputs from adb - one UID per line expected
     try:
       if(select([adb_stdout[0]], [], [], adb_read_every)[0]):
 
         l=adb_stdout[0].readline().decode("ascii").strip()
 
         # Extract UIDs from properly-prefixed filenames
-        m=re.findall("^.*{}(.*)$".format(adb_nfcuid_filename_prefix), l)
-        if m:
+        m=re.findall("^.*{}([0-9A-F]*)$".format(adb_nfcuid_filename_prefix),
+							l, re.I)
+        uid=m[0].upper() if m else None
 
-          # Strip anything not hexadecimal out of the UID and uppercase it,
-          # so it has a chance to be compatible with UIDs read by the other
-          # listeners
-          uid="".join([c for c in m[0].upper() if c in hexdigits])
-
-        else:
-          uid=None
     except KeyboardInterrupt:
       return(-1)
     except:
