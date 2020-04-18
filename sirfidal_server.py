@@ -757,7 +757,7 @@ def adb_listener(main_in_q):
     # Active UIDs update
     if send_active_uids_update:
 
-      # Synchronize the list of last-seen UIDs with the list of last-seen UIDs.
+      # Synchronize the list of active UIDs with the list of last-seen UIDs.
       # If we're in persistent mode and the tag isn't present, consider the
       # list of active UIDs empty instead
       active_uids=[] if adb_persistent_mode and not tag_present \
