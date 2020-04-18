@@ -209,7 +209,7 @@ CLIENT_HANDLER_STOP=24
 
 ### Global variables
 encruids_file_mtime=None
-encruids=None
+encruids=[]
 
 
 
@@ -1027,8 +1027,9 @@ def is_remote_user(pid):
 
 def load_encruids():
   """Read and verify the content of the encrypted UIDs file, if it has been
-  modified. Return a list of lists of username -> encrypted UID, or None in
-  case of a read or format error.
+  modified. In case of read or format error, delete the encrypted UIDs in
+  memory and returns None. Otherwise return False if the file didn't need
+  reloading, and True if it was reread
   """
 
   global encruids_file_mtime
@@ -1038,24 +1039,27 @@ def load_encruids():
   try:
     mt=os.stat(encrypted_uids_file).st_mtime
   except:
+    encruids=[]
     return(None)
 
-  # If the file hasn't changed, return the content we already have
+  # Check if the file has changed
   if not encruids_file_mtime:
     encruids_file_mtime=mt
   else:
     if mt <= encruids_file_mtime:
-      return(encruids)
+      return(False)
 
   # Re-read the file
   try:
     with open(encrypted_uids_file, "r") as f:
       new_encruids=json.load(f)
   except:
+    encruids=[]
     return(None)
 
   # Validate the structure of the JSON format
   if not isinstance(new_encruids, list):
+    encruids=[]
     return(None)
 
   for entry in new_encruids:
@@ -1065,12 +1069,13 @@ def load_encruids():
 	  isinstance(entry[0], str) and
 	  isinstance(entry[1], str)
 	):
+      encruids=[]
       return(None)
 
   # Update the encrypted UIDs currently in memory
   encruids_file_mtime=mt
   encruids=new_encruids
-  return(encruids)
+  return(True)
 
 
 
@@ -1146,6 +1151,7 @@ def main():
   active_adb_uids=[]
   active_uids=[]
   active_uids_prev=None
+  userauth_cache={}
   send_active_uids_update=False
   active_clients={}
 
@@ -1173,9 +1179,13 @@ def main():
         elif msg[0] == ADB_LISTENER_UIDS_UPDATE:
           active_adb_uids=msg[1]
 
+        # Save the previous list of active UIDs
         active_uids_prev=active_uids
-        active_uids=sorted(active_pcsc_uids + active_serial_uids + \
-				active_hid_uids + active_adb_uids)
+
+        # Merge the lists of UIDs from all the listeners
+        active_uids=list(set(sorted(active_pcsc_uids + active_serial_uids + \
+				active_hid_uids + active_adb_uids)))
+
         send_active_uids_update=True
 
       # New client notification from a client handler
@@ -1240,8 +1250,13 @@ def main():
 
 
 
+    # Try to reload the encrypted UIDs file. If it needed reloading, or if the
+    # list of active UIDs has changed, wipe the user authentication cache
+    if load_encruids() or send_active_uids_update:
+      userauth_cache={}
+
     # Process the active clients' requests
-    for cpid in list(active_clients):
+    for cpid in active_clients:
 
       auth=False
 
@@ -1265,30 +1280,40 @@ def main():
           active_clients[cpid].main_out_p.send([UIDS_UPDATE, [active_uids]])
           active_clients[cpid].new_request=False
 
-        # Authentication request: reload the encrypted UIDs file if needed
-        elif active_clients[cpid].request == WAITAUTH_REQUEST and \
-		load_encruids():
+        # Authentication request
+        elif active_clients[cpid].request == WAITAUTH_REQUEST:
 
-          # Try to match one of the active UIDs with one of the registered
-          # encrypted UIDs associated with that user
-          for uid in active_uids:
- 
-            for registered_user, registered_uid_encr in encruids:
-              if registered_user == active_clients[cpid].user and crypt.crypt(
+          # First try to find a cached authentication status for that user
+          if active_clients[cpid].user in userauth_cache:
+            auth=userauth_cache[active_clients[cpid].user]
+
+          # Second try to match one of the active UIDs with one of the
+          # registered encrypted UIDs associated with that user
+          else:
+            for uid in active_uids:
+              for registered_user, registered_uid_encr in encruids:
+                if registered_user == active_clients[cpid].user and crypt.crypt(
 			  uid,
 			  registered_uid_encr
 			) == registered_uid_encr:
-                auth=True	# User authenticated
+                  auth=True	# User authenticated
+                  break
+              if auth:
+                break
+
+            # Cache the result of this authentication - valid as long as the
+            # list of active UIDs doesn't change and the encrypted IDs file
+            # isn't reloaded - to avoid calling crypt() each time a requesting
+            # process asks an authentication and nothing has changed since the
+            # previous request
+            userauth_cache[active_clients[cpid].user]=auth
 
         # Add user request: if we have exactly one active UID, associate it
         # with the requested user
         elif active_clients[cpid].request == ADDUSER_REQUEST and \
 		len(active_uids)==1:
 
-          # Load the current encrypted UIDs file
-          new_encruids=load_encruids().copy()
-          if new_encruids==None:
-            new_encruids=[]
+          new_encruids=encruids.copy()
 
           # Don't replace an existing user <-> UID association: if we find one,
           # notify the client handler and replace the request with a fresh void
@@ -1325,16 +1350,11 @@ def main():
         elif active_clients[cpid].request == DELUSER_REQUEST and \
 		(active_clients[cpid].expires == None or len(active_uids)==1):
 
-          # Load the current encrypted UIDs file
-          curr_encruids=load_encruids()
-          if curr_encruids==None:
-            curr_encruids=[]
-
           # Find one or more existing user <-> UID associations and remove
           # them if needed
           assoc_deleted=False
           new_encruids=[]
-          for registered_user, registered_uid_encr in curr_encruids:
+          for registered_user, registered_uid_encr in encruids:
             if registered_user == active_clients[cpid].user and (
 			active_clients[cpid].expires == None or crypt.crypt(
 			  active_uids[0],
