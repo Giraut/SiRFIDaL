@@ -80,7 +80,7 @@ As root:
          reader in sirfidal_server.py
        - Make sure watch_hid is set to True in sirfidal_server.py
 
-    * Use with an NFC-enabled Android device as a reader [See Limitation below]
+    * Use with an NFC-enabled Android device as a reader [See Android note]
 
        apt-get install adb
        - Configure your Android device following the instructions below
@@ -190,8 +190,8 @@ Configuring an Android device as an external NFC reader for SiRFIDaL
       
 
 
-Limitation when using a HID reader or an Android device as an external reader
------------------------------------------------------------------------------
+Limitation when using a HID reader
+----------------------------------
 
 HID readers - also called "keyboard wedges" - are one-shot instead of
 repeating devices. This means they send the UID of a transponder they've read
@@ -211,7 +211,31 @@ instance, sirfidal_autolockscreen won't work properly in persistent mode, and
 sirfidal_beep will play a "down" beep while the transponder is still on the
 reader.
 
-An NFC-enabled Android device used as an external reader with the Tasker
-configuration above has the same limitation, because Tasker can only get
-NFC read events from Android, and also emulates a repeating device with the
-create-file-wait-delete-file trick.
+
+
+Android note regarding persistent mode emulation
+------------------------------------------------
+
+To provide persistent mode with an Android device used as an external NFC
+reader - i.e. to emulate a PC/SC reader or a repeating serial device, that
+continuously report whether a transponder is on the device - SiRFIDaL abuses
+the Android system log, and uses it to catch "tag off" events.
+
+This is a bit dirty however and may not always work, as Google may modify or
+remove that particular logging without notice at any time.
+
+Also, it may cause problems if the process that watches the log in Android
+(logcat) refuses to stop upon disconnecting the USB connection and/or starts
+running amok.
+
+If the feature fails to work properly, the symptom is SiRFIDaL "seeing" a
+transponder getting read, but failing to see it leave the reader.
+
+If logcat fails to stop or runs amok, the symptoms are the device running out
+of memory, running slow or hot, or a reduced battery life for no apparent
+reasons.
+
+In both cases, you can disable persistent mode by setting adb_persistent_mode
+to False in sirfidal_server.py. When persistent mode is disabled, the Android
+device still works as an external NFC reader, but degrades to the equivalent of
+a keyboard wedge (see above).

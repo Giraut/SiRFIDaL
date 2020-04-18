@@ -114,7 +114,7 @@ See the parameters below to configure this script.
 watch_pcsc=True
 watch_serial=True
 watch_hid=True
-watch_adb=True	# Android device used as an external NFC reader
+watch_adb=True	#Android device used as an external NFC reader
 
 # PC/SC parameters
 pcsc_read_every=0.2 #s
@@ -135,6 +135,7 @@ adb_read_every=0.2
 adb_client="/usr/bin/adb"
 adb_file_path_on_target="$EXTERNAL_STORAGE"
 adb_nfcuid_filename_prefix="nfcuid:"
+adb_persistent_mode=True
 
 # Server parameters
 max_server_connections=10
@@ -361,7 +362,7 @@ def serial_listener(main_in_q):
     # Open the reader's device file if it's closed
     if not fdevfile:
       try:
-        fdevfile=open(serial_reader_dev_file, "r")
+        fdevfile=open(serial_reader_dev_file, "rb", buffering=0)
       except KeyboardInterrupt:
         return(-1)
       except:
@@ -371,22 +372,23 @@ def serial_listener(main_in_q):
       sleep(2)	# Wait a bit to reopen the device
       continue
 
-    # Read a UID from the reader
-    c=""
+    # Read UIDs from the reader
+    rlines=[]
+    b=""
     try:
 
       if(select([fdevfile], [], [], serial_read_every)[0]):
 
         try:
 
-          c=fdevfile.read(1)
+          b=fdevfile.read(256).decode("ascii")
 
         except KeyboardInterrupt:
           return(-1)
         except:
-          c=""
+          b=""
 
-        if not c:
+        if not b:
           try:
             fdevfile.close()
           except:
@@ -394,6 +396,17 @@ def serial_listener(main_in_q):
           fdevfile=None
           sleep(2)	# Wait a bit to reopen the device
           continue
+
+
+        # Split the data into lines
+        for c in b:
+
+          if c=="\n" or c=="\r":
+            rlines.append(recvbuf)
+            recvbuf=""
+
+          elif len(recvbuf)<256 and c.isprintable():
+            recvbuf+=c
 
     except KeyboardInterrupt:
       return(-1)
@@ -405,17 +418,6 @@ def serial_listener(main_in_q):
       fdevfile=None
       sleep(2)	# Wait a bit to reopen the device
       continue
-
-    # Split the data into lines
-    rlines=[]
-    if c:
-
-      if c=="\n" or c=="\r":
-        rlines.append(recvbuf)
-        recvbuf=""
-
-      elif len(recvbuf)<256 and c.isprintable():
-        recvbuf+=c
 
     tstamp=int(datetime.now().timestamp())
 
@@ -593,7 +595,12 @@ def adb_listener(main_in_q):
   computer-attached NFC reader of sorts, that this server can use to
   authenticate users.
 
-  It's a bit hacky though...
+  In addition, to provide persistent mode, the listener also listens to the
+  Android system log for "tag off" events. This may be disabled to degrade to
+  event mode using only the Tasker script if this causes problems with the
+  Android device.
+
+  All this is functional but a bit hacky...
   """
 
   setproctitle("sirfidal_server_adb_listener")
@@ -607,19 +614,40 @@ def adb_listener(main_in_q):
 
   signal(SIGCHLD, sigchld_handler)
 
-  adb_shell_command=[adb_client, "shell",
-	"while [ 1 ];do ls {d}/{p}*;sleep {s}||sleep {l};done 2>/dev/null".
-		format(
-		  d=adb_file_path_on_target,
-		  p=adb_nfcuid_filename_prefix,
-		  s=adb_read_every,
-		  l=round(adb_read_every) if round(adb_read_every) > 0 else 1
-		)]
+  adb_shell_command= \
+	"while [ 1 ];do " \
+	  "ls {watch_directory}/{watch_files_prefix}*;" \
+	  "sleep {float_sleep_secs}" \
+	  "||" \
+	  "sleep {fallback_int_sleep_secs}" \
+	";done " \
+	"2>/dev/null" \
+	.format(
+		  watch_directory=adb_file_path_on_target,
+		  watch_files_prefix=adb_nfcuid_filename_prefix,
+		  float_sleep_secs=adb_read_every,
+		  fallback_int_sleep_secs=round(adb_read_every) \
+					 if round(adb_read_every) > 0 else 1
+		)
+
+  if adb_persistent_mode:
+    adb_shell_command= \
+	"(" \
+	  "logcat -c" \
+	  "&&"\
+	  "logcat NativeNfcTag:V StNativeNfcTag:V *:S" \
+	  "|" \
+	  "grep -i --line-buffered NativeNfcTag.*Tag\ lost" \
+	")" \
+	"&" \
+	+ adb_shell_command
 
   recvbuf=""
 
   uid_lastseens={}
+  active_uids=[]
   send_active_uids_update=True
+  tag_present=False
 
   while True:
 
@@ -627,7 +655,9 @@ def adb_listener(main_in_q):
     if not adb_proc[0]:
       try:
 
-        adb_proc[0]=Popen(adb_shell_command, stdout=PIPE, stderr=DEVNULL)
+        adb_proc[0]=Popen(["adb", "shell", adb_shell_command],
+				bufsize=0,
+				stdin=DEVNULL, stdout=PIPE, stderr=DEVNULL)
 
       except KeyboardInterrupt:
         return(-1)
@@ -639,21 +669,22 @@ def adb_listener(main_in_q):
       continue
 
     # Read ls command outputs from adb - one UID per line expected
-    c=""
+    rlines=[]
+    b=""
     try:
 
       if(select([adb_proc[0].stdout], [], [], adb_read_every)[0]):
 
         try:
 
-          c=adb_proc[0].stdout.read(1).decode("ascii")
+          b=adb_proc[0].stdout.read(256).decode("ascii")
 
         except KeyboardInterrupt:
           return(-1)
         except:
-          c=""
+          b=""
 
-        if not c:
+        if not b:
           if adb_proc[0]:
             try:
               adb_proc[0].kill()
@@ -662,6 +693,16 @@ def adb_listener(main_in_q):
             adb_proc[0]=None
           sleep(2)	# Wait a bit before trying to respawn a new adb client
           continue
+
+        # Split the data into lines
+        for c in b:
+
+          if c=="\n" or c=="\r":
+            rlines.append(recvbuf)
+            recvbuf=""
+
+          elif len(recvbuf)<256 and c.isprintable():
+            recvbuf+=c
 
     except KeyboardInterrupt:
       return(-1)
@@ -675,44 +716,56 @@ def adb_listener(main_in_q):
       sleep(2)	# Wait a bit before trying to respawn a new adb client
       continue
 
-    # Split the data into lines
-    rlines=[]
-    if c:
-
-      if c=="\n" or c=="\r":
-        rlines.append(recvbuf)
-        recvbuf=""
-
-      elif len(recvbuf)<256 and c.isprintable():
-        recvbuf+=c
-
     tstamp=int(datetime.now().timestamp())
 
-    # Process the lines from adb - one filename per line
+    # Process the lines from adb: in non-persistent mode, we should have one
+    # one filename per line when files are created by the Tasker script. In
+    # persistent mode, we can also get "Tag lost" event lines from logcat.
     for l in rlines:
 
+      # In persistent mode, try to match "Tag lost" lines, mark the tag as
+      # absent from the reader and trigger an active UIDs list update if we
+      # get one
+      if adb_persistent_mode and tag_present and \
+		re.match("^.*NativeNfcTag.*Tag lost.*$", l, re.I):
+        tag_present=False
+        send_active_uids_update=True
+
       # Extract UIDs from properly-prefixed filenames
-      m=re.findall("^.*{}([0-9A-F]*)$".format(adb_nfcuid_filename_prefix),
+      else:
+        m=re.findall("^.*{}([0-9A-F]*)$".format(adb_nfcuid_filename_prefix),
 							l, re.I)
-      uid=m[0].upper() if m else None
+        uid=m[0].upper() if m else None
 
-      # If we got a UID, add or update its timestamp in the last-seen list
-      if uid:
-        if uid not in uid_lastseens:
-          send_active_uids_update=True
-        uid_lastseens[uid]=tstamp
+        # If we got a UID add or update its timestamp in the last-seen list.
+        # If we add it (new unknown UID), mark the tag as present on the reader
+        # and trigger an active UIDs list update
+        if uid:
+          if uid not in uid_lastseens:
+            tag_present=True
+            send_active_uids_update=True
+          uid_lastseens[uid]=tstamp
 
-    # Remove UID timestamps that are too old from the last-seen list
+    # Remove UID timestamps that are too old from the last-seen list and
+    # trigger an active UIDs list update if we're not in persistent mode
     for uid in list(uid_lastseens):
       if tstamp - uid_lastseens[uid] > serial_uid_not_sent_inactive_timeout:
         del uid_lastseens[uid]
-        send_active_uids_update=True
+        if not adb_persistent_mode:
+          send_active_uids_update=True
 
-    # If the active UIDs have changed...
+    # Active UIDs update
     if send_active_uids_update:
 
+      # Synchronize the list of last-seen UIDs with the list of last-seen UIDs.
+      # If we're in persistent mode and the tag isn't present, consider the
+      # list of active UIDs empty instead
+      active_uids=[] if adb_persistent_mode and not tag_present \
+		else sorted(uid_lastseens)
+
       # ...send the list to the main process...
-      main_in_q.put([ADB_LISTENER_UIDS_UPDATE, list(uid_lastseens)])
+      main_in_q.put([ADB_LISTENER_UIDS_UPDATE, active_uids])
+
       send_active_uids_update=False
 
     else:
