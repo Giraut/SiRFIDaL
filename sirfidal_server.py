@@ -422,6 +422,9 @@ def serial_listener(main_in_q):
     # Process the lines from the device
     for l in rlines:
 
+      # Strip anything not hexadecimal out of the UID and uppercase it,
+      # so it has a chance to be compatible with UIDs read by the other
+      # listeners
       uid="".join([c for c in l.upper() if c in hexdigits])
 
       # If we got a UID, add or update its timestamp in the last-seen list
@@ -685,7 +688,7 @@ def adb_listener(main_in_q):
 
     tstamp=int(datetime.now().timestamp())
 
-    # Process the lines from adb
+    # Process the lines from adb - one filename per line
     for l in rlines:
 
       # Extract UIDs from properly-prefixed filenames
