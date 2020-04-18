@@ -350,12 +350,13 @@ def serial_listener(main_in_q):
   setproctitle("sirfidal_server_serial_listener")
 
   fdevfile=None
+
+  recvbuf=""
+
   uid_lastseens={}
   send_active_uids_update=True
 
   while True:
-
-    uid=None
 
     # Open the reader's device file if it's closed
     if not fdevfile:
@@ -365,43 +366,69 @@ def serial_listener(main_in_q):
         return(-1)
       except:
         fdevfile=None
-        sleep(2)	# Wait a bit as the device file is probably unavailable
+
+    if not fdevfile:
+      sleep(2)	# Wait a bit to reopen the device
+      continue
 
     # Read a UID from the reader
-    if fdevfile:
+    c=""
+    try:
+
+      if(select([fdevfile], [], [], serial_read_every)[0]):
+
+        try:
+
+          c=fdevfile.read(1)
+
+        except KeyboardInterrupt:
+          return(-1)
+        except:
+          c=""
+
+        if not c:
+          try:
+            fdevfile.close()
+          except:
+            pass
+          fdevfile=None
+          sleep(2)	# Wait a bit to reopen the device
+          continue
+
+    except KeyboardInterrupt:
+      return(-1)
+    except:
       try:
-        if(select([fdevfile], [], [], serial_read_every)[0]):
-
-          uid=fdevfile.readline().strip("\r\n")
-
-          # Strip anything not hexadecimal out of the UID and uppercase it,
-          # so it has a chance to be compatible with UIDs read by the other
-          # listeners
-          uid="".join([c for c in uid.upper() if c in hexdigits])
-
-        else:
-          uid=None
-      except KeyboardInterrupt:
-        return(-1)
+        fdevfile.close()
       except:
-        uid=None
-
-    # Close the device file in case of select timeout or read error, so we don't
-    # block the file at any time if the readers gets disconnected, and it gets
-    # properly reassigned by udev upon reconnecting. Also, wait a bit just in
-    # case, to prevent any chance of running a tight loop and wasting CPU.
-    if fdevfile and not uid:
-      fdevfile.close()
+        pass
       fdevfile=None
-      sleep(serial_read_every)
+      sleep(2)	# Wait a bit to reopen the device
+      continue
+
+    # Split the data into lines
+    rlines=[]
+    if c:
+
+      if c=="\n" or c=="\r":
+        rlines.append(recvbuf)
+        recvbuf=""
+
+      elif len(recvbuf)<256 and c.isprintable():
+        recvbuf+=c
 
     tstamp=int(datetime.now().timestamp())
 
-    # If we got a UID, add or update its timestamp in the last-seen list
-    if uid:
-      if uid not in uid_lastseens:
-        send_active_uids_update=True
-      uid_lastseens[uid]=tstamp
+    # Process the lines from the device
+    for l in rlines:
+
+      uid="".join([c for c in l.upper() if c in hexdigits])
+
+      # If we got a UID, add or update its timestamp in the last-seen list
+      if uid:
+        if uid not in uid_lastseens:
+          send_active_uids_update=True
+        uid_lastseens[uid]=tstamp
 
     # Remove UID timestamps that are too old from the last-seen list
     for uid in list(uid_lastseens):
@@ -568,17 +595,17 @@ def adb_listener(main_in_q):
 
   setproctitle("sirfidal_server_adb_listener")
 
-  adb_stdout=[None]
+  adb_proc=[None]
 
   # SIGCHLD handler to reap defunct adb processes when they quit
   def sigchld_handler(sig, fname):
     os.wait()
-    adb_stdout[0]=None
+    adb_proc[0]=None
 
   signal(SIGCHLD, sigchld_handler)
 
   adb_shell_command=[adb_client, "shell",
-	"while [ 1 ];do ls -1 {d}/{p}*;sleep {s}||sleep {l};done 2>/dev/null".
+	"while [ 1 ];do ls {d}/{p}*;sleep {s}||sleep {l};done 2>/dev/null".
 		format(
 		  d=adb_file_path_on_target,
 		  p=adb_nfcuid_filename_prefix,
@@ -586,53 +613,91 @@ def adb_listener(main_in_q):
 		  l=round(adb_read_every) if round(adb_read_every) > 0 else 1
 		)]
 
+  recvbuf=""
+
   uid_lastseens={}
   send_active_uids_update=True
 
   while True:
 
-    uid=None
-
     # Try to spawn an adb client
-    if not adb_stdout[0]:
+    if not adb_proc[0]:
       try:
-        adb_stdout[0]=Popen(adb_shell_command,
-			 stdout=PIPE, stderr=DEVNULL).stdout
+
+        adb_proc[0]=Popen(adb_shell_command, stdout=PIPE, stderr=DEVNULL)
+
       except KeyboardInterrupt:
         return(-1)
       except:
-        adb_stdout[0]=None
+        adb_proc[0]=None
 
-    if not adb_stdout[0]:
+    if not adb_proc[0]:
       sleep(2)	# Wait a bit before trying to respawn a new adb client
       continue
 
     # Read ls command outputs from adb - one UID per line expected
+    c=""
     try:
-      if(select([adb_stdout[0]], [], [], adb_read_every)[0]):
 
-        l=adb_stdout[0].readline().decode("ascii").strip()
+      if(select([adb_proc[0].stdout], [], [], adb_read_every)[0]):
 
-        # Extract UIDs from properly-prefixed filenames
-        m=re.findall("^.*{}([0-9A-F]*)$".format(adb_nfcuid_filename_prefix),
-							l, re.I)
-        uid=m[0].upper() if m else None
+        try:
+
+          c=adb_proc[0].stdout.read(1).decode("ascii")
+
+        except KeyboardInterrupt:
+          return(-1)
+        except:
+          c=""
+
+        if not c:
+          if adb_proc[0]:
+            try:
+              adb_proc[0].kill()
+            except:
+              pass
+            adb_proc[0]=None
+          sleep(2)	# Wait a bit before trying to respawn a new adb client
+          continue
 
     except KeyboardInterrupt:
       return(-1)
     except:
-      adb_stdout[0]=None
-      uid=None
+      if adb_proc[0]:
+        try:
+          adb_proc[0].kill()
+        except:
+          pass
+        adb_proc[0]=None
       sleep(2)	# Wait a bit before trying to respawn a new adb client
       continue
 
+    # Split the data into lines
+    rlines=[]
+    if c:
+
+      if c=="\n" or c=="\r":
+        rlines.append(recvbuf)
+        recvbuf=""
+
+      elif len(recvbuf)<256 and c.isprintable():
+        recvbuf+=c
+
     tstamp=int(datetime.now().timestamp())
 
-    # If we got a UID, add or update its timestamp in the last-seen list
-    if uid:
-      if uid not in uid_lastseens:
-        send_active_uids_update=True
-      uid_lastseens[uid]=tstamp
+    # Process the lines from adb
+    for l in rlines:
+
+      # Extract UIDs from properly-prefixed filenames
+      m=re.findall("^.*{}([0-9A-F]*)$".format(adb_nfcuid_filename_prefix),
+							l, re.I)
+      uid=m[0].upper() if m else None
+
+      # If we got a UID, add or update its timestamp in the last-seen list
+      if uid:
+        if uid not in uid_lastseens:
+          send_active_uids_update=True
+        uid_lastseens[uid]=tstamp
 
     # Remove UID timestamps that are too old from the last-seen list
     for uid in list(uid_lastseens):
