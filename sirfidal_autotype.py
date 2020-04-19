@@ -309,6 +309,9 @@ def main():
           wmname=window.get_wm_name()
           wmclass=window.get_wm_class()
 
+        if wmname==None or wmclass==None or len(wmclass)<2:
+          continue
+
       except:
         print("Error getting the window in focus. Are you running in X?")
         continue
