@@ -239,3 +239,10 @@ In both cases, you can disable persistent mode by setting adb_persistent_mode
 to False in sirfidal_server.py. When persistent mode is disabled, the Android
 device still works as an external NFC reader, but degrades to the equivalent of
 a keyboard wedge (see above).
+
+
+---------------------------------------------------------
+Bug reports? Questions? You can email me.
+Run this command to get my email address:
+C=base64\ -d $C<<<Y205emEybHpRSEoxYm1KdmVDNWpiMjBLCg==|$C
+---------------------------------------------------------
