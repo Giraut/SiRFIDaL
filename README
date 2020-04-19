@@ -241,8 +241,8 @@ device still works as an external NFC reader, but degrades to the equivalent of
 a keyboard wedge (see above).
 
 
----------------------------------------------------------
-Bug reports? Questions? You can email me.
-Run this command to get my email address:
-C=base64\ -d $C<<<Y205emEybHpRSEoxYm1KdmVDNWpiMjBLCg==|$C
----------------------------------------------------------
+           ---------------------------------------------------------
+                   Bug reports? Questions? You can email me.
+                   Run this command to get my email address:
+           C=base64\ -d $C<<<Y205emEybHpRSEoxYm1KdmVDNWpiMjBLCg==|$C
+           ---------------------------------------------------------
