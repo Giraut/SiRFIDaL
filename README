@@ -80,7 +80,7 @@ As root:
          reader in sirfidal_server.py
        - Make sure watch_hid is set to True in sirfidal_server.py
 
-    * Use with an NFC-enabled Android device as a reader [See Android note]
+    * Use with an NFC-enabled Android device as a reader [See Android note]:
 
        apt-get install adb
        - Configure your Android device following the instructions below
@@ -90,14 +90,14 @@ As root:
          allow USB debugging: check "Always allow from this computer" and
          tap Ok.
 
-    * Python3 modules needed (apt-get installation preferred, pip3 otherwise):
+    * Python3 modules needed:
 
-      apt-get install python3-pyscard   # If you want to use PC/SC readers
-      apt-get install python3-evdev     # If you want to use a HID reader
+      apt-get install python3-pyscard    # If you want to use PC/SC readers
+      apt-get install python3-evdev      # If you want to use a HID reader
       apt-get install python3-filelock
       apt-get install python3-psutil
-      apt-get install python3-xdo       # If you want to run sirfidal_autotype
-      pip3 install playsound            # If you want to run sirfidal_beep
+      apt-get install python3-xdo        # If you want to run sirfidal_autotype
+      apt-get install python3-pyaudio    # If you want to run sirfidal_beep
 
   * Copy the files:
 
