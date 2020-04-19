@@ -43,8 +43,14 @@ from filelock import FileLock
 from socket import socket, timeout, AF_UNIX, SOCK_STREAM, SOL_SOCKET, \
 		SO_PASSCRED
 try:
-  from pynput.keyboard import Key, Controller
+  from xdo import xdo
+  typer="xdo"
 except:
+  try:
+    from pynput.keyboard import Controller
+    typer="pynput"
+  except:
+    typer=None
   pass
 
 
@@ -139,7 +145,8 @@ def main():
 
   argparser.add_argument(
 	  "-d", "--defsfile",
-	  help="Autotype definitions file",
+	  help="Autotype definitions file (default {})".format(
+		default_autotype_definitions_file),
 	  type=str,
 	  default=os.path.expanduser(default_autotype_definitions_file)
 	)
@@ -405,11 +412,21 @@ def main():
             if d[0]==wmclass[1] and d[1]==wmclass[0] and d[2]==wmname:
 
               # "Type" the corresponding string
-              try:
-                kbd=Controller()
-                kbd.type(d[3])
-              except:
-                print("Error typing synthetic keyboard events")
+              if typer=="xdo":
+                try:
+                  xdo().enter_text_window(d[3])
+                except:
+                  print("Error typing synthetic keyboard events using xdo")
+
+              elif typer=="pynput":
+                try:
+                  kbd=Controller()
+                  kbd.type(d[3])
+                except:
+                  print("Error typing synthetic keyboard events using pynput")
+
+              else:
+                print("Error: no usable typer module. Install xdo or pynput")
 
               break
 
