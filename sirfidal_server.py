@@ -858,7 +858,7 @@ def client_handler(pid, uid, gid, main_in_q, main_out_p, chandler_out_p, conn):
       if(conn):
         try:
           conn.sendall((csendbuf + "\n").encode("ascii"))
-        except:	# oops, the socket was closed
+        except:	# Oops, the socket was closed
           # inform the main process we want to stop and close the socket.
           main_in_q.put([client_handler_stop_request, [pid, main_out_p]])
           conn.close()
@@ -955,7 +955,14 @@ def client_handler(pid, uid, gid, main_in_q, main_out_p, chandler_out_p, conn):
       elif fd==conn:
 
         # Get data from the socket
-        b=fd.recv(256).decode("ascii")
+        try:
+          b=fd.recv(256).decode("ascii")
+        except:	# Oops, the socket was closed
+          # inform the main process we want to stop and close the socket.
+          main_in_q.put([CLIENT_HANDLER_STOP_REQUEST, [pid, main_out_p]])
+          conn.close()
+          conn=None
+          continue
 
         # If we got nothing, the client has closed its end of the socket.
         # Inform the main process we want to stop and close the socket.
