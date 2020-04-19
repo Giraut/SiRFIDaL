@@ -1,17 +1,19 @@
 #!/usr/bin/python3
-"""PAM module for user authentication using an RFID or NFC transponder.
+"""PAM module to do user authentication using an RFID or NFC transponder.
 
-This script is a SiRFIDaL client. It is not meant to be called directly, but
-by the pam_exec.so PAM module. It forward the PAM authentication request, along
-with a delay for successful authentication, to the SiRFIDaL server, then wait 
-for the authentication status reply from the server.
+This script is a SiRFIDaL client. It is normally meant to be called by the
+pam_exec.so PAM module, but you may use it directly or in your own scripts also.
+
+It forwards the PAM authentication request, along with a delay for successful
+authentication, to the SiRFIDaL server, then wait for the authentication status
+reply from the server.
 
 The delay for successful authentication may be specified with the -w argument.
 If unspecified, the delay is 2 seconds.
 
-PAM needs to be configured to use this script. Typically, with Linux PAM, if
-you want to do single factor authentication (password *OR* RFID), you want to
-do the following configuration:
+PAM needs to be configured to use this script as a PAM module. Typically, with
+Linux PAM, if you want to do single factor authentication (password *OR* RFID),
+you want to do the following configuration:
 
 - Add a configuration file in /usr/share/pam-configs for this PAM module
 (for example /usr/share/pam-configs/sirfidal_pam.config) with the following
@@ -43,12 +45,12 @@ In effect, doing so replaces pam_unix.so's "useless" wait with SiRFIDaL's
 "useful" RFID / NFC authentication delay. That way, if you log in regularly
 with a password and the login fails, you won't see a difference. But if the
 primary Unix login fails, you can use the subsequent delay to present your RFID
-or NFC tag to log in.
+or NFC transponder to log in.
 
-So typically, if you only want to log in with your tag, simply press ENTER to
-dismiss the regular Unix password, then present your tag within the 2 second
-delay. Or present your tag first then dismiss the regular Unix password prompt
-with ENTER to log in immediately.
+So typically, if you only want to log in with your transponder, simply press
+ENTER to dismiss the regular Unix password, then present your transponder
+within the 2 second delay. Or present your transponder first then dismiss the
+regular Unix password prompt with ENTER to log in immediately.
 
 Once you have created /usr/share/pam-configs/sirfidal_pam.config and modified
 /usr/share/pam-configs/unix, commit the changes by invoking:
@@ -61,6 +63,8 @@ user must have been added to the encrypted UIDs file (see sirfidal_useradm.py).
 If you'd rather do two-factor authentication (2FA - i.e. login is allowed
 with a password *AND* RFID), replace "success=end" with "success=ok" in
 /usr/share/pam-configs/unix
+
+See README.example_PAM_scenarios for more PAM configuration options.
 """
 
 ### Parameters
@@ -102,13 +106,11 @@ def main():
   """
 
   # Get the PAM_USER environment variable. If we don't have it, we're
-  # not being called by pam_exec.so, so give up with an error message
-  pam_user=os.environ["PAM_USER"] if "PAM_USER" in os.environ else None
-  if not pam_user:
-    print("Error: this script is meant to be called by pam_exec.so, " \
-		"not directly")
-    return(-1)
-  
+  # not being called by pam_exec.so, so get the USER environment variable
+  # instead
+  pam_user=os.environ["PAM_USER"] if "PAM_USER" in os.environ else \
+		os.environ["USER"] if "USER" in os.environ else None
+
   # Read the command line arguments
   argparser=ArgumentParser()
   argparser.add_argument(
@@ -129,21 +131,29 @@ def main():
   wait_secs=args.wait if args.wait!=None else default_auth_wait
   pam_user=args.user if args.user else pam_user
 
+  # Fail if we don't have a user to authenticate
+  if not pam_user:
+    print("Error: no username to authenticate")
+    return(-1)
+  
   # Open a socket to the auth server
   try:
     sock=socket(AF_UNIX, SOCK_STREAM)
   except:
     sleep(wait_secs)
+    print("Error: socket timeout")
     return(-2)
   try:
     sock.setsockopt(SOL_SOCKET, SO_PASSCRED, 1)
   except:
     sleep(wait_secs)
+    print("Error: socket setup")
     return(-3)
   try:
     sock.connect(socket_path)
   except:
     sleep(wait_secs)
+    print("Error: socket connect")
     return(-4)
 
   # Make sure we never get stuck on an idle server
@@ -154,6 +164,7 @@ def main():
     sock.sendall("WAITAUTH {} {}\n".format(pam_user, wait_secs).encode("ascii"))
   except:
     sleep(wait_secs)
+    print("Error: socket send")
     return(-5)
 
   # Get the reply - one line only
@@ -167,9 +178,11 @@ def main():
       b=sock.recv(256).decode("ascii")
     except timeout:
       sleep(wait_secs)
+      print("Error: socket receive timeout")
       return(-6)
     except:
       sleep(wait_secs)
+      print("Error: socket receive")
       return(-7)
 
     # If we got nothing, the server has closed its end of the socket.
@@ -177,6 +190,7 @@ def main():
 
       sock.close()
       sleep(wait_secs)
+      print("Error: socket unexpectedly closed")
       return(-8)
 
     # Read one CR- or LF-terminated line
@@ -191,7 +205,9 @@ def main():
 
   sock.close
   
-  # Return the authentication status to pam_exec.so
+
+  # Print the server's reply and return the authentication status
+  print(server_reply)
   return(0 if server_reply=="AUTHOK" else 1)
 
 
