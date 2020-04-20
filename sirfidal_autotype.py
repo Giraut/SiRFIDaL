@@ -67,8 +67,8 @@ defsfile_locked=False
 # Functions
 def load_defsfile():
   """Read and verify the content of the definitions file, if it has been
-  modified. Return a list [application, class, window title, string], or None
-  in case of a read or format error.
+  modified. Return True if the file didn't need reloading and there was
+  no error, False in case of read or format error.
   """
 
   global defsfile_mtime
@@ -78,25 +78,25 @@ def load_defsfile():
   try:
     mt=os.stat(autotype_definitions_file).st_mtime
   except:
-    return(None)
+    return(False)
 
-  # If the file hasn't changed, return the content we already have
+  # Check if the file needs reloading
   if not defsfile_mtime:
     defsfile_mtime=mt
   else:
     if mt <= defsfile_mtime:
-      return(defsfile)
+      return(True)
 
   # Re-read the file
   try:
     with open(autotype_definitions_file, "r") as f:
       new_defsfile=json.load(f)
   except:
-    return(None)
+    return(False)
 
   # Validate the structure of the JSON format
   if not isinstance(new_defsfile, list):
-    return(None)
+    return(False)
 
   for entry in new_defsfile:
     if not (
@@ -107,12 +107,12 @@ def load_defsfile():
 	  isinstance(entry[2], str) and
 	  isinstance(entry[3], str)
 	):
-      return(None)
+      return(False)
 
   # Update the definitions currently in memory
   defsfile_mtime=mt
   defsfile=new_defsfile
-  return(defsfile)
+  return(True)
 
 
 
@@ -165,6 +165,11 @@ def main():
                 "current window",
 	  type=str,
 	)
+  mutexargs.add_argument(
+	  "-r", "--removedefstring",
+	  help="Remove string in the definition file for the current window",
+	  action="store_true",
+	)
 
   argparser.add_argument(
 	  "-n", "--nocr",
@@ -215,10 +220,10 @@ def main():
       crecvbuf=""
 
       # If we're asked to manipulate the definition file, lock it before
-      # the user authenticates, so another instance of the program running
-      # can't trigger an autotype while we're changing the file after the user
-      # has authenticated
-      if args.writedefstring:
+      # the user authenticates, so another instance of the program can't
+      # trigger an autotype with an old definition before we've had a
+      # chance to change the file
+      if args.writedefstring!=None or args.removedefstring:
         try:
           defsfile_lock.acquire(timeout=1)
         except:
@@ -333,72 +338,79 @@ def main():
 
         return(0)
 
-      # Create an entry (or replace an existing entry) for this window in the
+      # Create an entry, replace an existing entry or delete any entries for
+      # this window in the
       # definitions file
-      elif args.writedefstring:
+      elif args.writedefstring!=None or args.removedefstring:
 
         # Load the existing definitions file if one exists
-        if os.path.exists(autotype_definitions_file):
-          curr_defsfile=load_defsfile()
-        else:
-          curr_defsfile=[]
+        if not load_defsfile():
+          print("Error loading the definitions file")
+          return(-1)
 
-        if curr_defsfile==None:
+        # Create the contents of the new definitions file
+        new_defsfile=[]
+        defsfile_modified=False
+        entry_appended=False
 
-            print("Error loading the definitions file")
-            return(-1)
+        newstr=(args.writedefstring if args.writedefstring!=None else "") + \
+		("" if args.nocr else "\r")
 
-        else:
+        for d in defsfile:
           
-          # Create the contents of the new definitions file
-          new_defsfile=[]
-          entry_replaced=False
+          if d[0]==wmclass[1] and d[1]==wmclass[0] and d[2]==wmname:
 
-          newstr=args.writedefstring + ("" if args.nocr else "\r")
+            if not defsfile_modified:
 
-          for d in defsfile:
-            
-            if d[0]==wmclass[1] and d[1]==wmclass[0] and d[2]==wmname:
-
-              if not entry_replaced:
-
+              if args.writedefstring!=None:
                 new_defsfile.append([wmclass[1], wmclass[0], wmname, newstr])
-                print("Updated existing entry for this window")
-                entry_replaced=True
 
-            else:
-                new_defsfile.append(d)
+              defsfile_modified=True
+              print("{} existing entry for this window".format(
+			"Updated" if args.writedefstring!=None else "Deleted"))
 
-          if not entry_replaced:
+          else:
+              new_defsfile.append(d)
+
+        if not defsfile_modified:
+
+          if args.writedefstring!=None:
+
             new_defsfile.append([wmclass[1], wmclass[0], wmname, newstr])
+            defsfile_modified=True
             print("Created entry for this window")
 
-          retcode=0
+          else:
+            print("No entry found for this window")
 
-          # Save the new definition file
-          if not write_defsfile(new_defsfile):
+        retcode=0
 
-            print("Error writing the definitions file")
-            retcode=-1
+        # Save the new definition file
+        if defsfile_modified and not write_defsfile(new_defsfile):
 
-          # Release the lock to the definitions file, but sleep a bit first, in
-          # case we ran faster than another instance of the program, to give it
-          # a chance to choke on the lock and not send a string rightaway
-          sleep(1)
-          defsfile_lock.release()
-          defsfile_locked=False
+          print("Error writing the definitions file")
+          retcode=-1
 
-          return(retcode)
+        # Release the lock to the definitions file, but sleep a bit first, in
+        # case we ran faster than another instance of the program, to give it
+        # a chance to choke on the lock and not send a string rightaway
+        sleep(1)
+        defsfile_lock.release()
+        defsfile_locked=False
+
+        return(retcode)
 
       # "Type" string if we find a definition matching the window currently in
       # focus
       else:
 
-        # Acquire the lock to the definitions file. If we can't quietly pass
+        # Acquire the lock to the definitions file. If we can't, quietly pass
+        # our turn
         try:
           defsfile_lock.acquire(timeout=1)
         except:
           continue
+
         defsfile_locked=True
 
         if not load_defsfile():
