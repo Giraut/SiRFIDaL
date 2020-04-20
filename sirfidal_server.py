@@ -617,7 +617,7 @@ def adb_listener(main_in_q):
 
   adb_shell_command= \
 	"logcat -c" \
-	"&&"\
+	"&&" \
 	"logcat -v brief log:I NativeNfcTag:D StNativeNfcTag:D *:S"
 
   recvbuf=""
