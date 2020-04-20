@@ -5,7 +5,7 @@
   <Task sr="t" id="1">
     <Action sr="act0" code="330"/>
     <Action sr="act1" code="123">
-      <Str sr="arg0" ve="3">f=$EXTERNAL_STORAGE/nfcuid:%nfc_id;&gt;$f;sleep 2;rm $f</Str>
+      <Str sr="arg0" ve="3">log nfcuid:%nfc_id</Str>
     </Action>
   </Task>
 </TaskerData>

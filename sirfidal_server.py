@@ -134,8 +134,9 @@ hid_simulate_uid_stays_active=1 #s
 adb_read_every=0.2
 adb_client="/usr/bin/adb"
 adb_file_path_on_target="$EXTERNAL_STORAGE"
-adb_nfcuid_filename_prefix="nfcuid:"
+adb_nfcuid_log_prefix="nfcuid:"
 adb_persistent_mode=True
+adb_uid_timeout_in_non_persistent_mode=1 #s
 
 # Server parameters
 max_server_connections=10
@@ -615,32 +616,9 @@ def adb_listener(main_in_q):
   signal(SIGCHLD, sigchld_handler)
 
   adb_shell_command= \
-	"while [ 1 ];do " \
-	  "ls {watch_directory}/{watch_files_prefix}*;" \
-	  "sleep {float_sleep_secs}" \
-	  "||" \
-	  "sleep {fallback_int_sleep_secs}" \
-	";done " \
-	"2>/dev/null" \
-	.format(
-		  watch_directory=adb_file_path_on_target,
-		  watch_files_prefix=adb_nfcuid_filename_prefix,
-		  float_sleep_secs=adb_read_every,
-		  fallback_int_sleep_secs=round(adb_read_every) \
-					 if round(adb_read_every) > 0 else 1
-		)
-
-  if adb_persistent_mode:
-    adb_shell_command= \
-	"(" \
-	  "logcat -c" \
-	  "&&"\
-	  "logcat NativeNfcTag:V StNativeNfcTag:V *:S" \
-	  "|" \
-	  "grep -i --line-buffered NativeNfcTag.*Tag\ lost" \
-	")" \
-	"&" \
-	+ adb_shell_command
+	"logcat -c" \
+	"&&"\
+	"logcat -v brief log:I NativeNfcTag:D StNativeNfcTag:D *:S"
 
   recvbuf=""
 
@@ -718,9 +696,7 @@ def adb_listener(main_in_q):
 
     tstamp=int(datetime.now().timestamp())
 
-    # Process the lines from adb: in non-persistent mode, we should have one
-    # one filename per line when files are created by the Tasker script. In
-    # persistent mode, we can also get "Tag lost" event lines from logcat.
+    # Process the lines from logcat
     for l in rlines:
 
       # In persistent mode, try to match "Tag lost" lines, mark the tag as
@@ -731,10 +707,10 @@ def adb_listener(main_in_q):
         tag_present=False
         send_active_uids_update=True
 
-      # Extract UIDs from properly-prefixed filenames
+      # Extract UIDs logged by the Tasker script
       else:
-        m=re.findall("^.*{}([0-9A-F]*)$".format(adb_nfcuid_filename_prefix),
-							l, re.I)
+        m=re.findall("^.*log.*{}([0-9A-F]+).*$".format(
+		adb_nfcuid_log_prefix), l, re.I)
         uid=m[0].upper() if m else None
 
         # If we got a UID add or update its timestamp in the last-seen list.
@@ -749,7 +725,7 @@ def adb_listener(main_in_q):
     # Remove UID timestamps that are too old from the last-seen list and
     # trigger an active UIDs list update if we're not in persistent mode
     for uid in list(uid_lastseens):
-      if tstamp - uid_lastseens[uid] > serial_uid_not_sent_inactive_timeout:
+      if tstamp - uid_lastseens[uid] > adb_uid_timeout_in_non_persistent_mode:
         del uid_lastseens[uid]
         if not adb_persistent_mode:
           send_active_uids_update=True
