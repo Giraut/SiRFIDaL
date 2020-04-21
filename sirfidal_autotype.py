@@ -160,8 +160,6 @@ def main():
   """Main routine
   """
   global autotype_definitions_file
-  global defsfile_lock
-  global defsfile_locked
 
   # Get the PID of our parent process, to detect if it changes later on
   ppid=Process().parent()
@@ -213,28 +211,38 @@ def main():
   # Get the user's name
   user=getuser()
 
-  firstauth=True
-  sock=None
-
   # If the definitions file doesn't exist, create it
   if not os.path.isfile(autotype_definitions_file) and not write_defsfile([]):
     print("Error creating the definitions file")
     return(-1)
 
+  sock=None
+  defsfile_locked=False
+  do_release_defsfile_lock=False
+  do_return_status=None
 
+  firstauth=True
 
   # Main loop
   while True:
 
-    # If we loop back here and the lockfile is locked, release it
-    if defsfile_locked:
+    # If the definitions file lock is locked, release it if we've been told to,
+    # if the socket is closed or if we're about to return
+    if (do_release_defsfile_lock or not sock or do_return_status!=None) \
+	and defsfile_locked:
       defsfile_lock.release()
       defsfile_locked=False
+      do_release_defsfile_lock=False
+
+    # Do return if we've been told to
+    if do_return_status!=None:
+      return(do_return_status)
 
     # If our parent process has changed, the session that initially started
     # us up has probably terminated - in which case, we should terminate also
     if Process().parent()!=ppid:
-      return(0)
+      do_return_status=0
+      continue
 
     if not sock:
 
@@ -243,15 +251,12 @@ def main():
         sock=socket(AF_UNIX, SOCK_STREAM)
         sock.setsockopt(SOL_SOCKET, SO_PASSCRED, 1)
         sock.connect(socket_path)
-        sock.settimeout(10)	# Don't get stuck on a closed socket
+        sock.settimeout(5)	# Don't get stuck on a closed socket
       except:
         if sock:
           sock.close()
         sock=None
-        try:
-          sleep(1)
-        except:
-          return(0)
+        sleep(1)
         continue
 
       user_authenticated=False
@@ -264,10 +269,14 @@ def main():
       if args.writedefstring!=None or args.removedefstring:
         try:
           defsfile_lock.acquire(timeout=1)
+          defsfile_locked=True
         except:
+          defsfile_locked=False
           print("Error securing exclusive access to the definitions file")
-          return(-1)
-        defsfile_locked=True
+          print("Maybe delete {} if it's stale?".format(
+		autotype_definitions_file + ".lock"))
+          do_return_status=-1
+          continue
 
     # Send the request to the server
     try:
@@ -296,7 +305,9 @@ def main():
         b=sock.recv(256).decode("ascii")
       except KeyboardInterrupt:
         sock.close()
-        return(0)
+        sock=None
+        do_return_status=0
+        break
       except:
         sock.close()
         sock=None
@@ -330,7 +341,8 @@ def main():
           user_authenticated=False
 
     if not sock:
-      sleep(1)
+      if do_return_status==None:
+        sleep(1)
       continue
 
     # The user has just authenticated
@@ -372,7 +384,8 @@ def main():
         print("    class:       {}".format(wmclass[0]))
         print("    Title:       {}".format(wmname))
 
-        return(0)
+        do_return_status=0
+        continue
 
       # Create an entry, replace an existing entry or delete any entries for
       # this window in the
@@ -382,7 +395,8 @@ def main():
         # Load the existing definitions file if one exists
         if not load_defsfile():
           print("Error loading the definitions file")
-          return(-1)
+          do_return_status=-1
+          continue
 
         # Create the contents of the new definitions file
         new_defsfile=[]
@@ -407,7 +421,7 @@ def main():
 
               defsfile_modified=True
               print("{} existing entry for this window".format(
-			"Updated" if args.writedefstring!=None else "Deleted"))
+			"Updated" if args.writedefstring!=None else "Removed"))
 
           else:
               new_defsfile.append(d)
@@ -423,22 +437,20 @@ def main():
           else:
             print("No entry found for this window")
 
-        retcode=0
+        do_return_status=0
 
         # Save the new definition file
         if defsfile_modified and not write_defsfile(new_defsfile):
 
           print("Error writing the definitions file")
-          retcode=-1
+          do_return_status=-1
 
-        # Release the lock to the definitions file, but sleep a bit first, in
-        # case we ran faster than another instance of the program, to give it
-        # a chance to choke on the lock and not send a string rightaway
+        # Sleep a bit before releasing the lockfile and returning, to give
+        # another process waiting on a successful authentication to autotype
+        # something a chance to choke on the lock, so it won't immediately
+        # autotype the new string
         sleep(1)
-        defsfile_lock.release()
-        defsfile_locked=False
-
-        return(retcode)
+        continue
 
       # "Type" string if we find a definition matching the window currently in
       # focus
@@ -447,14 +459,14 @@ def main():
         # Acquire the lock to the definitions file. If we can't, quietly pass
         # our turn
         try:
-          defsfile_lock.acquire(timeout=1)
+          defsfile_lock.acquire(timeout=0)
+          defsfile_locked=True
         except:
+          defsfile_locked=False
           continue
-        defsfile_locked=True
 
         if not load_defsfile():
           print("Error loading the definitions file")
-          continue
 
         else:
 
@@ -489,7 +501,9 @@ def main():
 
               break
 
-    #If the server has returned a successful authentication, sleep a bit so we
+        do_release_defsfile_lock=True
+
+    # If the server has returned a successful authentication, sleep a bit so we
     # don't run a tight loop as long as the UID is active
     if user_authenticated:
       sleep(0.2)
@@ -499,10 +513,4 @@ def main():
 # Jump to the main routine
 if __name__=="__main__":
 
-  exitcode=main()
-
-  # Release lock to the definitions file if it's still locked
-  if defsfile_locked:
-    defsfile_lock.release()
-
-  sys.exit(exitcode)
+  sys.exit(main())
