@@ -296,7 +296,7 @@ def main():
       for l in clines:
 
         # Retrieve the user's authentication status from the server's reply
-        if l == "AUTHOK":
+        if l[:6] == "AUTHOK":
           user_authenticated=True
 
         elif l == "NOAUTH":

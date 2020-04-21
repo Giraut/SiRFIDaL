@@ -92,12 +92,13 @@ As root:
 
     * Python3 modules needed:
 
-      apt-get install python3-pyscard    # If you want to use PC/SC readers
-      apt-get install python3-evdev      # If you want to use a HID reader
+      apt-get install python3-pyscard       # Needed to use PC/SC readers
+      apt-get install python3-evdev         # Needed to use a HID reader
       apt-get install python3-filelock
       apt-get install python3-psutil
-      apt-get install python3-xdo        # If you want to run sirfidal_autotype
-      apt-get install python3-pyaudio    # If you want to run sirfidal_beep
+      apt-get install python3-xdo           # Needed to run sirfidal_autotype
+      apt-get install python3-cryptography  # Needed to run sirfidal_autotype
+      apt-get install python3-pyaudio       # Needed to run sirfidal_beep
 
   * Copy the files:
 

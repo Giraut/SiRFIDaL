@@ -204,11 +204,15 @@ def main():
         server_reply+=c
 
   sock.close
-  
 
-  # Print the server's reply and return the authentication status
-  print(server_reply)
-  return(0 if server_reply=="AUTHOK" else 1)
+  # Print the server's reply (without UID if it was sent by the server) and
+  # return the authentication status
+  if server_reply[:6]=="AUTHOK":
+    print(server_reply[:6])
+    return(0)
+  else:
+    print(server_reply)
+    return(1)
 
 
 

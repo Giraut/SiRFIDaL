@@ -15,10 +15,6 @@ If you don't want the program to type ENTER at the end of the string, use the
 Finally, run the program without any arguments to automatically type the strings
 in the windows defined in the configuration file.
 
-The permissions on the configuration file should be set at 600 if you intend
-to have the program type passwords, so that other users can't read the file
-with your passwords in it.
-
 This program is a SiRFIDaL client. It requires the SiRFIDaL server to interact
 with authenticated RFID / NFC transponders.
 """
@@ -34,12 +30,15 @@ import re
 import os
 import sys
 import json
+import secrets
 import argparse
 import Xlib.display
 from time import sleep
 from psutil import Process
 from getpass import getuser
 from filelock import FileLock
+from base64 import b64encode, b64decode
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from socket import socket, timeout, AF_UNIX, SOCK_STREAM, SOL_SOCKET, \
 		SO_PASSCRED
 try:
@@ -128,6 +127,33 @@ def write_defsfile(new_defsfile):
 
   return(True)
 
+# Encrypt a plaintext string into an encrypted base64 string
+def encrypt(pst, key):
+
+  # Repeat the key to make it 32 bytes long (AES256 needs 32 bytes)
+  key=(key.encode("ascii") * 32)[:32]
+
+  # Encrypt the string
+  nonce=secrets.token_bytes(12)	# GCM mode needs 12 fresh bytes every time
+  es=nonce + AESGCM(key).encrypt(nonce, pst.encode("utf-8"), b"")
+
+  # Return the encrypted text as a base64 string
+  return(b64encode(es).decode("ascii"))
+
+
+
+# Decrypt an encrypted base64 string into a plaintext string
+def decrypt(bes, key):
+
+  # Repeat the key to make it 32 bytes long (AES256 needs 32 bytes)
+  key=(key.encode("ascii") * 32)[:32]
+
+  try:
+    es=b64decode(bes)
+    return(AESGCM(key).decrypt(es[:12], es[12:], b"").decode("utf-8"))
+  except:
+    return(None)
+  
 
 
 def main():
@@ -148,7 +174,7 @@ def main():
 	  help="Autotype definitions file (default {})".format(
 		default_autotype_definitions_file),
 	  type=str,
-	  default=os.path.expanduser(default_autotype_definitions_file)
+	  default=default_autotype_definitions_file
 	)
 
   mutexargs=argparser.add_mutually_exclusive_group()
@@ -188,10 +214,22 @@ def main():
   user=getuser()
 
   firstauth=True
-
   sock=None
 
+  # If the definitions file doesn't exist, create it
+  if not os.path.isfile(autotype_definitions_file) and not write_defsfile([]):
+    print("Error creating the definitions file")
+    return(-1)
+
+
+
+  # Main loop
   while True:
+
+    # If we loop back here and the lockfile is locked, release it
+    if defsfile_locked:
+      defsfile_lock.release()
+      defsfile_locked=False
 
     # If our parent process has changed, the session that initially started
     # us up has probably terminated - in which case, we should terminate also
@@ -237,10 +275,7 @@ def main():
     except:
       sock.close()
       sock=None
-      try:
-        sleep(1)
-      except:
-        return(0)
+      sleep(1)
       continue
 
     # Get the user's authentication status
@@ -265,20 +300,12 @@ def main():
       except:
         sock.close()
         sock=None
-        try:
-          sleep(1)
-        except:
-          return(0)
         break
 
       # If we got nothing, the server has closed its end of the socket.
       if len(b)==0:
         sock.close()
         sock=None
-        try:
-          sleep(1)
-        except:
-          return(0)
         break
 
       # Read CR- or LF-terminated lines
@@ -295,17 +322,25 @@ def main():
       for l in clines:
 
         # Retrieve the user's authentication status from the server's reply
-        if l == "AUTHOK":
+        if l[:6] == "AUTHOK":
           user_authenticated=True
+          auth_uid=l[6:].strip()
 
         elif l == "NOAUTH":
           user_authenticated=False
 
     if not sock:
+      sleep(1)
       continue
 
     # The user has just authenticated
     if not last_user_authenticated and user_authenticated:
+
+      # Check that the server has returned a UID - it should not reply without
+      # sending us one, since we requested authentication for ourselves
+      if not auth_uid:
+        print("Error: the server didn't return a UID")
+        continue
 
       # Get the active window
       try:
@@ -322,6 +357,7 @@ def main():
           wmclass=window.get_wm_class()
 
         if wmname==None or wmclass==None or len(wmclass)<2:
+          print("Error getting the window in focus")
           continue
 
       except:
@@ -353,8 +389,12 @@ def main():
         defsfile_modified=False
         entry_appended=False
 
+        # New entry in plaintext
         newstr=(args.writedefstring if args.writedefstring!=None else "") + \
 		("" if args.nocr else "\r")
+
+        # New entry as an encrypted base64 string
+        newstr=encrypt(newstr, auth_uid)
 
         for d in defsfile:
           
@@ -410,11 +450,11 @@ def main():
           defsfile_lock.acquire(timeout=1)
         except:
           continue
-
         defsfile_locked=True
 
         if not load_defsfile():
           print("Error loading the definitions file")
+          continue
 
         else:
 
@@ -423,17 +463,24 @@ def main():
 
             if d[0]==wmclass[1] and d[1]==wmclass[0] and d[2]==wmname:
 
+              # Decrypt the encrypted string to type
+              s=decrypt(d[3], auth_uid)
+              if s==None:
+                print("Error decrypting the string to type. Are you sure " \
+			"it was encoded with this UID?")
+                break
+
               # "Type" the corresponding string
               if typer=="xdo":
                 try:
-                  xdo().enter_text_window(d[3])
+                  xdo().enter_text_window(s)
                 except:
                   print("Error typing synthetic keyboard events using xdo")
 
               elif typer=="pynput":
                 try:
                   kbd=Controller()
-                  kbd.type(d[3])
+                  kbd.type(s)
                 except:
                   print("Error typing synthetic keyboard events using pynput")
 
@@ -442,14 +489,11 @@ def main():
 
               break
 
-        # Release the lock to the definitions file
-        defsfile_lock.release()
-        defsfile_locked=False
-
     #If the server has returned a successful authentication, sleep a bit so we
     # don't run a tight loop as long as the UID is active
     if user_authenticated:
       sleep(0.2)
+
 
 
 # Jump to the main routine
@@ -457,9 +501,8 @@ if __name__=="__main__":
 
   exitcode=main()
 
-  # Release lock to the definitions file if it's been acquired
+  # Release lock to the definitions file if it's still locked
   if defsfile_locked:
-    # We probably got here if there was an error
     defsfile_lock.release()
 
   sys.exit(exitcode)

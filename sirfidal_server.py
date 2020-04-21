@@ -63,7 +63,7 @@ list of server requests and responses:
 
 Service:        Authenticate a user
 Client sends:   WAITAUTH <user> <max wait (int or float) in s>
-Server replies: AUTHOK
+Server replies: AUTHOK [authenticating UID]
                 NOAUTH
 
 Service:        Watch the evolution of the number of active UIDs in real-time
@@ -94,6 +94,13 @@ Client sends:   DELUSER <user> -1
 Server replies: NONE
                 WRITEERR
                 OK
+
+After a successful WAITAUTH request, if the requesting process owner is the
+the same as the user they request an authentication for (i.e. the user
+authenticates themselves), the server returns the authenticating UID in
+plaintext after the AUTHOK reply, to use for whatever purpose they see fit
+(encryption usually). If the requesting process owner requests authentication
+for another user (e.g. su), the UID isn't sent after AUTHOK.
 
 After receiving a reply to a WAITAUTH, ADDUSER or DELUSER request, the client
 is expected to close the socket within a certain grace period. The client may
@@ -158,13 +165,13 @@ import re
 import sys
 import pwd
 import json
-import crypt
 import struct
 import psutil
 from time import sleep
 from select import select
 from string import hexdigits
 from datetime import datetime
+from crypt import crypt, mksalt
 from signal import signal, SIGCHLD
 from setproctitle import setproctitle
 from filelock import FileLock, Timeout
@@ -221,8 +228,7 @@ class client:
 
   def __init__(self):
 
-    self.uid=None
-    self.gid=None
+    self.pw_name=None
     self.main_out_p=None
     self.request=None
     self.user=None
@@ -779,6 +785,14 @@ def server(main_in_q, sock):
       conn.close()
       continue
 
+    # Get the passwd name of the calling process' UID. It should exist, so if
+    # we get an error, this is fishy and we should close the connection.
+    try:
+      pw_name=pwd.getpwuid(uid).pw_name
+    except:
+      conn.close()
+      continue
+
     # Create a pipe for the main process to send messages to the client handler
     main_out_p, chandler_out_p = Pipe()
 
@@ -787,6 +801,7 @@ def server(main_in_q, sock):
 		  pid,
 		  uid,
 		  gid,
+		  pw_name,
 		  main_in_q,
 		  main_out_p,
 		  chandler_out_p,
@@ -795,7 +810,8 @@ def server(main_in_q, sock):
     
 
 
-def client_handler(pid, uid, gid, main_in_q, main_out_p, chandler_out_p, conn):
+def client_handler(pid, uid, gid, pw_name,
+			main_in_q, main_out_p, chandler_out_p, conn):
   """Handler communications between the client and the main process
   """
 
@@ -808,7 +824,7 @@ def client_handler(pid, uid, gid, main_in_q, main_out_p, chandler_out_p, conn):
   # (to add or delete UIDs without being able to read the encrypted file) and
   # others may not access it in any way.
   try:
-    os.setgroups(os.getgrouplist(pwd.getpwuid(uid).pw_name, gid))
+    os.setgroups(os.getgrouplist(pw_name, gid))
     os.setgid(gid)
     os.setuid(uid)
     os.umask(0o057)
@@ -824,7 +840,7 @@ def client_handler(pid, uid, gid, main_in_q, main_out_p, chandler_out_p, conn):
   force_stop_tstamp=None
 
   # Inform the main process that we have a new client
-  main_in_q.put([NEW_CLIENT, [pid, main_out_p]])
+  main_in_q.put([NEW_CLIENT, [pid, pw_name, main_out_p]])
   new_client_ack=False 
 
   while True:
@@ -874,6 +890,11 @@ def client_handler(pid, uid, gid, main_in_q, main_out_p, chandler_out_p, conn):
         # to the client
         elif msg[0]==AUTH_RESULT:
           csendbuf="AUTHOK" if msg[1][0]==AUTH_OK else "NOAUTH"
+
+          # Also send the UID in plaintext if the main process deems it okay
+          if msg[1][1]:
+            csendbuf+=" {}".format(msg[1][1])
+
           continue
 
         # The main process reports an update in the number of active UIDs: sent
@@ -1134,7 +1155,8 @@ def main():
   active_adb_uids=[]
   active_uids=[]
   active_uids_prev=None
-  userauth_cache={}
+  auth_cache={}
+  auth_uid_cache={}
   send_active_uids_update=False
   active_clients={}
 
@@ -1177,11 +1199,12 @@ def main():
         # Create this client in the list of active clients and assign it the
         # void request to time out the client if it stays idle too long
         active_clients[msg[1][0]]=client()
-        active_clients[msg[1][0]].main_out_p=msg[1][1]
+        active_clients[msg[1][0]].pw_name=msg[1][1]
+        active_clients[msg[1][0]].main_out_p=msg[1][2]
         active_clients[msg[1][0]].request=VOID_REQUEST
         active_clients[msg[1][0]].expires=msg_tstamp + \
 			client_force_close_socket_timeout
-        msg[1][1].send([NEW_CLIENT_ACK])
+        active_clients[msg[1][0]].main_out_p.send([NEW_CLIENT_ACK])
 
       # The client requested that we either:
       # - authenticate a user within a certain delay (capped)
@@ -1236,12 +1259,14 @@ def main():
     # Try to reload the encrypted UIDs file. If it needed reloading, or if the
     # list of active UIDs has changed, wipe the user authentication cache
     if load_encruids() or send_active_uids_update:
-      userauth_cache={}
+      auth_cache={}
+      auth_uid_cache={}
 
     # Process the active clients' requests
     for cpid in active_clients:
 
       auth=False
+      auth_uid=None
 
       # If we arrive here following a keepalive message, only process timeouts
       if msg[0] != MAIN_PROCESS_KEEPALIVE:
@@ -1267,19 +1292,23 @@ def main():
         elif active_clients[cpid].request == WAITAUTH_REQUEST:
 
           # First try to find a cached authentication status for that user
-          if active_clients[cpid].user in userauth_cache:
-            auth=userauth_cache[active_clients[cpid].user]
+          if active_clients[cpid].user in auth_cache:
+
+            auth=auth_cache[active_clients[cpid].user]
+            auth_uid=auth_uid_cache[active_clients[cpid].user]
 
           # Second try to match one of the active UIDs with one of the
           # registered encrypted UIDs associated with that user
           else:
+
             for uid in active_uids:
               for registered_user, registered_uid_encr in encruids:
-                if registered_user == active_clients[cpid].user and crypt.crypt(
+                if registered_user == active_clients[cpid].user and crypt(
 			  uid,
 			  registered_uid_encr
 			) == registered_uid_encr:
-                  auth=True	# User authenticated
+                  auth=True	# User authenticated...
+                  auth_uid=uid	#...with this UID
                   break
               if auth:
                 break
@@ -1289,7 +1318,8 @@ def main():
             # isn't reloaded - to avoid calling crypt() each time a requesting
             # process asks an authentication and nothing has changed since the
             # previous request
-            userauth_cache[active_clients[cpid].user]=auth
+            auth_cache[active_clients[cpid].user]=auth
+            auth_uid_cache[active_clients[cpid].user]=auth_uid
 
         # Add user request: if we have exactly one active UID, associate it
         # with the requested user
@@ -1302,7 +1332,7 @@ def main():
           # notify the client handler and replace the request with a fresh void
           # request and associated timeout
           for registered_user, registered_uid_encr in new_encruids:
-            if registered_user == active_clients[cpid].user and crypt.crypt(
+            if registered_user == active_clients[cpid].user and crypt(
 			  active_uids[0],
 			  registered_uid_encr
 			) == registered_uid_encr:
@@ -1319,7 +1349,7 @@ def main():
 
             new_encruids.append([
 		  active_clients[cpid].user,
-		  crypt.crypt(active_uids[0], crypt.mksalt())
+		  crypt(active_uids[0], mksalt())
 		])
             active_clients[cpid].main_out_p.send([ENCRUIDS_UPDATE,
 		new_encruids])
@@ -1339,7 +1369,7 @@ def main():
           new_encruids=[]
           for registered_user, registered_uid_encr in encruids:
             if registered_user == active_clients[cpid].user and (
-			active_clients[cpid].expires == None or crypt.crypt(
+			active_clients[cpid].expires == None or crypt(
 			  active_uids[0],
 			  registered_uid_encr
 			) == registered_uid_encr):
@@ -1365,12 +1395,16 @@ def main():
 
       # If an authentication request has timed out or the authentication is
       # successful, notify the client handler and replace the request with
-      # a fresh void request and associated timeout
+      # a fresh void request and associated timeout. If the requesting process
+      # owner is the same as the user they request an authentication for, they
+      # have the right to know their own UID, so send it along.
       if active_clients[cpid].request == WAITAUTH_REQUEST and \
 		(auth or active_clients[cpid].expires==None or \
 		msg_tstamp >= active_clients[cpid].expires):
-        active_clients[cpid].main_out_p.send([AUTH_RESULT,
-		[AUTH_OK if auth else AUTH_NOK]])
+        active_clients[cpid].main_out_p.send([AUTH_RESULT, [AUTH_OK if auth
+		else AUTH_NOK, auth_uid if auth and \
+		active_clients[cpid].user == active_clients[cpid].pw_name \
+		else None]])
         active_clients[cpid].request=VOID_REQUEST
         active_clients[cpid].expires=msg_tstamp + \
 			client_force_close_socket_timeout
