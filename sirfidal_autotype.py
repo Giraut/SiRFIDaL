@@ -297,7 +297,7 @@ def main():
 
       if firstauth:
 
-        print("Waiting for UIDs - CTRL-C to quit...")
+        print("Waiting for UID - CTRL-C to quit...")
         firstauth=False
        
       # Get data from the socket
