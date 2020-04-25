@@ -154,7 +154,8 @@ socket_path="/tmp/sirfidal_server.socket"
 # Encrypted UIDs file path
 encrypted_uids_file="/etc/sirfidal_encr_uids"
 
-# Names of disallowed parent process names for requesting processes
+# Names of disallowed parent process names for requesting processes. This is a
+# very weak security check, but we leave it there just in case
 remote_user_parent_process_names=["sshd", "telnetd"]
 
 
@@ -1016,9 +1017,12 @@ def client_handler(pid, uid, gid, pw_name,
 
 
 def is_remote_user(pid):
-  """Attempt to determine if the user is logged in locally (linux console,
-  X terminal...) or remotely by tracing the parent processes and trying to
-  find telltale process names
+  """Attempt to determine if the user is logged in locally or remotely by
+  tracing the parent processes and trying to find telltale process names.
+  This is very poor security, and won't prevent a mildly determined bad guy
+  with a local account from logging in if the PAM modules is configured as 1FA.
+  But we keep it around as a last ditch effort to keep honest people honest, if
+  the user has ignored the warning in the README.
   """
   pprocess=psutil.Process(pid=pid)
 

@@ -1,14 +1,16 @@
                 SiRFIDaL - Simple RFID authentication for Linux
                 -----------------------------------------------
 
+
 This is a set of utilities to use RFID or NFC transponder UIDs as authentication
 tokens on a Linux computer - typically for login purposes.
 
-Admittedly, UIDs are a weak form of authentication. They're really no better
-than passwords. But for non-critical applications - personal computer users,
-non-critical work environments - they're good enough and very convenient.
-If you're in that situation, read on. If you need strong security, don't use
-these utilities!
+
+/!\ WARNING: do not use the PAM module on a computer where users are allowed /!\
+/!\ WARNING: to login remotely! Only use it to login on a computer with a    /!\
+/!\ WARNING: single local console and no SSH server, VNC server or remote X  /!\
+/!\ WARNING: connections enabled - i.e. a workstation.                       /!\
+
 
 The utilities included are:
 
@@ -231,6 +233,7 @@ If you experience that problem, you can disable persistent mode by setting
 adb_persistent_mode to False in sirfidal_server.py. When persistent mode is
 disabled, the Android device still works as an external NFC reader, but
 degrades to the equivalent of a keyboard wedge (see above).
+
 
 
            ---------------------------------------------------------
