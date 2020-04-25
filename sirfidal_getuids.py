@@ -24,7 +24,7 @@ Sample use cases with the optional arguments:
 - Collect UIDs into a text file, with "UID=" before the value, and a semicolon
   after the value, one per line:
 
-    sirfidal_getuids.py -q -p UID= -s $ ';\n' > some_file.txt
+    sirfidal_getuids.py -q -p UID= -s $';\n' > some_file.txt
 
 - Wait for a UID for 5 seconds, then use that UID as a key to open an encrypted
   hard disk with LUKS:
@@ -200,7 +200,7 @@ def main():
 
         else:
 
-          # Output the new UID
+          # Output the new UIDs
           for uid in set(uids_list) - set(last_uids_list):
 
             sys.stdout.write(args.prefix + uid + args.suffix)

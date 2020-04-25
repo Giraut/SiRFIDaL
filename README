@@ -42,9 +42,14 @@ The utilities included are:
                            or NFC transponders.
 
 - sirfidal_autotype        Program to automatically type custom strings in
-                           predefined application windows (passwords for
+                           predefined application X windows (passwords for
                            example) upon authenticating with a RFID or NFC
                            transponder.
+
+- sirfidal_keyboard_wedge  Program to emulate a keyboard wedge RFID / NFC
+                           reader, by typing out the UIDs read by the SiRFIDaL
+                           server as if they came from a keyboard. This
+                           utility must be run as root.
 
 - sirfidal_getuids         Continuously displays new UIDs being read by the
                            SiRFIDaL server. This utility must be run as root,
@@ -124,8 +129,11 @@ As root:
     systemctl enable sirfidal_server
     systemctl start sirfidal_server
 
-    systemctl enable sirfidal_beep      # Optional
-    systemctl start sirfidal_beep       # Optional
+    systemctl enable sirfidal_beep            # Optional
+    systemctl start sirfidal_beep             # Optional
+
+    systemctl enable sirfidal_keyboard_wedge  # Optional
+    systemctl start sirfidal_keyboard_wedge   # Optional
 
   * Configure PAM for single factor authentication (password or RFID / NFC):
 
