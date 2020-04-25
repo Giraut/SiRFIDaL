@@ -78,6 +78,7 @@ import os
 import sys
 import argparse
 from time import sleep
+from datetime import datetime
 from socket import socket, timeout, AF_UNIX, SOCK_STREAM, SOL_SOCKET, \
 		SO_PASSCRED
 
@@ -129,6 +130,7 @@ def main():
   args=argparser.parse_args()
 
   wait_secs=args.wait if args.wait!=None else default_auth_wait
+  wait_secs=wait_secs if wait_secs >= 0 else 0
   pam_user=args.user if args.user else pam_user
 
   # Fail if we don't have a user to authenticate
@@ -157,13 +159,16 @@ def main():
     return(-4)
 
   # Make sure we never get stuck on an idle server
-  sock.settimeout((wait_secs if wait_secs >=0 else 0) + 5)
+  sock.settimeout(wait_secs + 5)
+
+  endwait_tstamp=datetime.now().timestamp() + wait_secs
 
   # Send the authentication request to the server
   try:
     sock.sendall("WAITAUTH {} {}\n".format(pam_user, wait_secs).encode("ascii"))
   except:
-    sleep(wait_secs)
+    left_to_wait=endwait-datetime.now().timestamp()
+    sleep(left_to_wait if left_to_wait > 0 else 0)
     print("Error: socket send")
     return(-5)
 
@@ -177,11 +182,11 @@ def main():
     try:
       b=sock.recv(256).decode("ascii")
     except timeout:
-      sleep(wait_secs)
       print("Error: socket receive timeout")
       return(-6)
     except:
-      sleep(wait_secs)
+      left_to_wait=endwait-datetime.now().timestamp()
+      sleep(left_to_wait if left_to_wait > 0 else 0)
       print("Error: socket receive")
       return(-7)
 
@@ -189,7 +194,8 @@ def main():
     if len(b)==0:
 
       sock.close()
-      sleep(wait_secs)
+      left_to_wait=endwait-datetime.now().timestamp()
+      sleep(left_to_wait if left_to_wait > 0 else 0)
       print("Error: socket unexpectedly closed")
       return(-8)
 
