@@ -1,0 +1,209 @@
+                      Security of the SiRFIDaL PAM module
+                      -----------------------------------
+
+This document discusses the security gotchas of the SiRFIDaL PAM plugin, that
+stem from the design of the SiRFIDaL system, so that it can be used with full
+knowledge of what it can and cannot do.
+
+
+
+Security of RFID UIDs as authentication tokens
+----------------------------------------------
+
+I initially coded SiRFIDaL because I wanted to log into my Linux boxes without
+typing a password, using a simple RFID transponder (operating at 125 kHz).
+RFID transponders only reports a short, fixed UID.
+
+I also wanted to log in with the basic UID reported by ISO 14443 NFC
+transponders (a subset of RFID, operating at 13.56 MHz), which are also short
+fixed UIDs.
+
+If you're reading this, you probably want to do the same thing.
+
+If you've looked around on the internet, you might have noticed that there
+aren't many tools to achieve this. While there are many tools to authenticate
+securely with cryptographic chips, nothing much exists for "dumb" transponders.
+
+There's a good reason for that: RFID UIDs are inherently insecure:
+
+- The UIDs are fixed and transmitted in clear, so they're vulnerable to MITM 
+  attacks, either with a fake reader, or by tapping the lines of the reader.
+
+- RFID transponders are incredibly easy to clone: if a bad guy manages to read
+  the UID of your transponder, they can make themselves a perfect copy.
+
+- The unique IDs aren't all that unique: they're usually too short (4- to
+  7- bytes usually, although longer ones exist), and given the number of
+  transponders out there, the 4-byte code space has already rolled over.
+
+- Short passwords are weak and their use is usually discouraged. Shorter
+  transponder UIDs are even weaker and should be even more discouraged.
+
+For the above reasons, it doesn't make much sense to implement a UID-based
+authentication mechanism: when used for single-factor authentication, UIDs
+actually weaken the security of your system considerably compared to regular
+passwords. When used as part of a two-factor authentication setup, they don't
+really improve the security of the system a whole lot.
+
+Therefore, for critical systems used in sensitive or hostile environments,
+logging in using RFID transponder UIDs ranges from mildly useless to a
+Really Bad Idea[tm].
+
+But there are use cases where they make sense. For instance:
+
+- Workstations inside a fully firewalled intranet
+- Home computers that don't run remote login services
+- Media players
+- Machine tool control computers in a factory
+
+These applications are low-security: the systems run in a secure environment
+(physically or from a networking point of view) and the login feature is
+really only there to keep honest people honest - i.e. to prevent your spouse
+or your co-worker from logging into your account easily.
+
+In such settings, the convenience of RFID logins trumps the security
+shortcomings.
+
+With the security implications of RFID UIDs understood and aknowledged, how
+does one go about making a UID-based login system that's as secure as possible?
+
+
+
+Design approaches to UID-based logins
+-------------------------------------
+
+  * In-band transmission of UIDs
+
+In the Unix world, login is traditionally done by typing a password on a
+terminal. In the days of yore, it was a real terminal connected to a serial
+port or a modem. Nowadays, real terminals have all but disappeared, but
+they continue to exist as emulated terminals - Linux consoles and X terminals.
+
+When an application runs, it gets keyboard data inputted by the user from its
+controlling terminal. The problem with that is, the application has no secure
+and full-proof way to know where the physical terminal is: it might be a local
+terminal or a remote terminal. The application doesn't know and can't know.
+
+That is a terrible shortcoming of the Unix terminal system, and there's no way
+around it without breaking compatibility with existing systems.
+
+Terminals only have one "up" communication channel, to carry the keyboard
+data from the keyboard to the system. As long as the authentication tokens
+(passwords) come from that channel, there's no problem: wherever they may be,
+the user on that terminal is intrinsically the same user typing the password.
+
+If you want to login using a RFID transponder, a problem arises: the data from
+the reader should ideally be transmitted on a second communication channel
+that's tied to the terminal. In other words, in a perfect world, terminals
+should implement separate communication channels for various input devices,
+and applications that are interested in data other than keyboard keystrokes
+should be able to receive the relevant data as separate streams.
+
+That's not possible in a traditional Unix environment, sadly.
+
+PAM modules are application (they are called by PAM, which is called by login
+applications) so they too are tied to a controlling terminal, and they too
+only have the single keyboard data stream to work with. So if you want to
+send them RFID UIDs for the purpose of logging using strictly the terminal
+system, you need to do it in-band - that is, send the UIDs along with the
+regular keyboard text.
+
+That's exactly what keyboard wedges do - as their name implies.
+
+Keyboard wedges have one advantage: whatever data they send emulating a
+keyboard is guaranteed to be from the same user that's behind the terminal -
+wherever they may be. They also work in unmodified systems that have no concept
+of RFID UIDs.
+
+However, keyboard wedges have several severe disadvantages:
+
+- Unless they're "smart", they'll send raw RFID UIDs, which aren't passwords.
+  So you'll have to change your Unix password to log in with a UID.
+
+- It's impossible to do two-factor authentication, unless a special RFID-aware
+  PAM module is used. And even then, it's arguably not true 2FA, as the data
+  for the password and for the RFID UID come from a single channel. So in an
+  unmodified system with Unix login, you end up using a weak UID as your main,
+  password. In a specially modified system, the added security from the second
+  authentication factor is dubious at best.
+
+- Keyboard wedges only send the UID once when they read a transponder.
+  Therefore, it's impossible to test the continued presence of a transponder
+  on the reader, making it impossible to implement interesting features such
+  as automatically locking or unlocking a session when the transponder is
+  taken off the reader and put back on the reader.
+
+- The most critical weakness: since they send their data in-band, keyboard
+  wedges easily end up "typing" your UID or password in clear in an application
+  other than a login application - for instance in your shell ending up in
+  your history, in your word processor messing up your document, or most
+  inconveniently, in an online chat window letting everybody present know your
+  credentials.
+
+  * out-of-band transmission of UIDs
+
+To avoid the shortcomings of keyboard wedges, RFID readers exist that don't send
+the UIDs as keystrokes. Most commonly, they're either serial readers (RS232,
+RS485, Wiegand or USB CDC readers) or PS/SC readers. All readers with more
+advanced features also belong to that category, because they also need to
+receive data back from the computer - something the single "up" keyboard channel
+doesn't allow.
+
+With those readers, the RFID data is read separately from the keyboard data.
+There's a clear separation between the two channels, and the RFID data channel
+can also report the presence or absence of a transponder.
+
+The big problem with that approach is that the RFID channel and the keyboard
+channel aren't tied to one another: an application can't tell if the RFID
+reader is under the control of the same user who's behind the its controlling
+terminal. In other words, if another user is logged in and tries to authenticate
+as you, and they happen to do so while the reader has a valid RFID transponder
+in range, they will be authenticated.
+
+With the traditional Unix terminal infrastructure, there is just no way to
+securely tie a terminal and a separate data source. The only way to do that is
+to extend or sidestep the terminal system entirely: either come up with a
+totally separate authentication system, or convince the developers and
+maintainers behind the various Linux components to modify the terminal system
+to implement separate input channels. The latter will never happen, as it
+would break decades of backward compatibility.
+
+
+
+Design choice for SiRFIDaL and use limitations
+----------------------------------------------
+
+SiRFIDaL uses the out-of-band UID transmission approach (unless you use the
+SiRFIDaL keyboard wedge emulator) so a variety of readers can be exploited,
+UIDs and passwords are never revealed in clear text, and applications can
+probe the presence of transponders.
+
+However, since the goal of SiRFIDaL is to implement RFID authentication that
+works in a mostly unmodified Linux system, as explained above, the SiRFIDaL PAM
+module can't know whether a user requesting an authentication is in control of
+the RFID reader. As a result, when a RFID transponder is authenticated, it is
+authenticated system-wide, for any process belonging to any user, coming from
+any terminal, requesting the authentication.
+
+Therefore, the only way to ensure the user requesting the RFID authentication
+is the user physically behind the terminal next to the reader is to restrict
+the use of SiRFIDaL on a system where only one user can be logged in at any
+given time. In other words, a desktop machine with only one console (more than
+one local console is possible under Linux, but those systems are getting rare)
+and no remote login enabled.
+
+Since SiRFIDaL works with insecure RFID UIDs to begin with, it accepts the
+premise that a RFID reader may be "hijacked" by a remote attacker, and that it
+shouldn't be used on machines that allows several concurrent users.
+
+The SiRFIDaL server attempts a weak form of remote user detection when a client
+connects, in case a negligent admin ignores the warning and enables telnetd or
+sshd anyway. It won't stop an attacker who knows what they're doing, but it'll
+stop a simple unsophisticated user trying to gain access just by doing su or
+sudo at the right time. It is NOT proper security however!
+
+It *may* be used in a machine that accepts several concurrent users *if* you
+use RFID login as part of a 2FA scheme, and *if* you accept that the presence
+of an authenticating transponder on the reader essentially disables the added
+security of the RFID authentication factor against remote attackers. But for
+most serious admins, this is an unacceptable safety compromise.
