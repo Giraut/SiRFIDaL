@@ -93,7 +93,7 @@ ascii_to_ecodes_us={
   "1" : e.KEY_1,            "2" : e.KEY_2,            "3" : e.KEY_3,
   "4" : e.KEY_4,            "5" : e.KEY_5,            "6" : e.KEY_6,
   "7" : e.KEY_7,            "8" : e.KEY_8,            "9" : e.KEY_9,
-  ":" :S|e.KEY_SEMICOLON,   ";" : e.KEY_SEMICOLON,    "<" : S|e.KEY_COMMA,
+  ":" : S|e.KEY_SEMICOLON,  ";" : e.KEY_SEMICOLON,    "<" : S|e.KEY_COMMA,
   "=" : e.KEY_EQUAL,        ">" : S|e.KEY_DOT,        "?" : S|e.KEY_SLASH,
   "@" : S|e.KEY_2,          "A" : S|e.KEY_A,          "B" : S|e.KEY_B,
   "C" : S|e.KEY_C,          "D" : S|e.KEY_D,          "E" : S|e.KEY_E,
