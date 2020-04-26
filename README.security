@@ -32,9 +32,9 @@ There's a good reason for that: RFID UIDs are inherently insecure:
 - RFID transponders are incredibly easy to clone: if a bad guy manages to read
   the UID of your transponder, they can make themselves a perfect copy.
 
-- The unique IDs aren't all that unique: they're usually too short (4- to
-  7- bytes usually, although longer ones exist), and given the number of
-  transponders out there, the 4-byte code space has already rolled over.
+- The unique IDs aren't all that unique: they're usually too short (4 to 7
+  usually, although longer ones exist), and given the number of transponders
+  out there, the 4-byte code space has already rolled over.
 
 - Short passwords are weak and their use is usually discouraged. Shorter
   transponder UIDs are even weaker and should be even more discouraged.
