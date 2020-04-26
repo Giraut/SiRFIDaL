@@ -125,18 +125,6 @@ modifiers_to_ecodes={
   RC:  e.KEY_RIGHTCTRL,  A:   e.KEY_LEFTALT,    AGR: e.KEY_RIGHTALT
 }
 
-# Dead key mask
-DEADKEY=0x40000
-
-# Keycode field mask
-KC=0X00fff
-
-# Dumpkeys names to modifiers masks
-dumpkeys_modifiers_to_masks={
-  "plain"  : 0 , "shift"  : LS, "shiftl" : LS, "shiftr" : RS, "control": C ,
-  "ctrll"  : LC, "ctrlr"  : LC, "alt"    : A ,  "altgr" : AGR
-}
-
 # Dumpkeys names to ASCII
 dumpkeys_to_ascii={
   "Delete"      : BS,       "Tab"         : TAB,      "Return"      : CR,
@@ -177,6 +165,12 @@ dumpkeys_to_ascii={
   "dead_circumflex": "^",
   "dead_grave"     : "`",
   "dead_tilde"     : "~"
+}
+
+# Dumpkeys names to modifiers masks
+dumpkeys_modifiers_to_masks={
+  "plain"  : 0 , "shift"  : LS, "shiftl" : LS, "shiftr" : RS, "control": C ,
+  "ctrll"  : LC, "ctrlr"  : LC, "alt"    : A ,  "altgr" : AGR
 }
 
 
