@@ -5,7 +5,7 @@ This script is a SiRFIDaL client. It is normally meant to be called by the
 pam_exec.so PAM module, but you may use it directly or in your own scripts also.
 
 It forwards the PAM authentication request, along with a delay for successful
-authentication, to the SiRFIDaL server, then wait for the authentication status
+authentication, to the SiRFIDaL server, then waits for the authentication status
 reply from the server.
 
 The delay for successful authentication may be specified with the -w argument.
