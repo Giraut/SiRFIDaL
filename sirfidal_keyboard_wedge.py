@@ -169,8 +169,8 @@ dumpkeys_to_ascii={
 
 # Dumpkeys names to modifiers masks
 dumpkeys_modifiers_to_masks={
-  "plain"  : 0 , "shift"  : LS, "shiftl" : LS, "shiftr" : RS, "control": C ,
-  "ctrll"  : LC, "ctrlr"  : LC, "alt"    : A ,  "altgr" : AGR
+  "plain"  : 0,  "shift"  : S,  "shiftl" : LS, "shiftr" : RS, "control": C,
+  "ctrll"  : LC, "ctrlr"  : LC, "alt"    : A,   "altgr" : AGR
 }
 
 
