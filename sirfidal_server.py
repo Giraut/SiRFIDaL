@@ -591,21 +591,17 @@ def hid_listener(main_in_q):
 
 
 def adb_listener(main_in_q):
-  """Run a shell on an Android cellphone with USB debugging enabled with the
-  external adb utility, get it to continuously list files in a certain
-  directory with a certain prefix, and capture the lines from the shell.If
-  lines are coming through, extract the UID from the file path.
+  """On an Android device with USB debugging turned on, run logcat to detect log
+  lines from a Tasker script that logs the %nfc_id variable with a prefix in the
+  system log upon receiving an NFC read event. The Tasker script is necessary
+  to recover the NFC UID, that isn't logged by Android itself. With the Tasker
+  script and USB debugging, we're able to exfiltrate the UID from the Android
+  device and turn it into a computer-attached reader.
 
-  In conjunction with a Tasker script that creates a file with the prefix
-  followed by the %nfc_id variables in the name upon scanning an NFC tag, waits
-  a bit, then deletes the file, we can turn an Android cellphone into an
-  computer-attached NFC reader of sorts, that this server can use to
-  authenticate users.
-
-  In addition, to provide persistent mode, the listener also listens to the
-  Android system log for "tag off" events. This may be disabled to degrade to
-  event mode using only the Tasker script if this causes problems with the
-  Android device.
+  In addition, to provide persistent mode, the listener also listens for "tag
+  off" events from the Android system log. This may be disabled to degrade to
+  event mode using only the Tasker script, if the particular Android device or
+  Android version doesn't log these events for some reason.
 
   All this is functional but a bit hacky...
   """
