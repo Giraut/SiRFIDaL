@@ -132,15 +132,14 @@ serial_reader_dev_file="/dev/ttyACM0"
 serial_uid_not_sent_inactive_timeout=1 #s
 
 # HID parameters
-hid_read_every=0.2
+hid_read_every=0.2 #s
 hid_reader_dev_file="/dev/input/by-id/"	\
 			"usb-ACS_ACR1281_Dual_Reader-if01-event-kbd"
 hid_simulate_uid_stays_active=1 #s
 
 # ADB parameters
-adb_read_every=0.2
+adb_read_every=0.2 #s
 adb_client="/usr/bin/adb"
-adb_file_path_on_target="$EXTERNAL_STORAGE"
 adb_nfcuid_log_prefix="nfcuid:"
 adb_persistent_mode=True
 adb_uid_timeout_in_non_persistent_mode=1 #s
