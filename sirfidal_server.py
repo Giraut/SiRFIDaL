@@ -848,7 +848,7 @@ def client_handler(pid, uid, gid, pw_name,
           conn.sendall((csendbuf + "\n").encode("ascii"))
         except:	# Oops, the socket was closed
           # inform the main process we want to stop and close the socket.
-          main_in_q.put([client_handler_stop_request, [pid, main_out_p]])
+          main_in_q.put([CLIENT_HANDLER_STOP_REQUEST, [pid, main_out_p]])
           conn.close()
           conn=none
       csendbuf=""
