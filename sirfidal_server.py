@@ -129,6 +129,7 @@ pcsc_read_every=0.2 #s
 # Serial parameters
 serial_read_every=0.2 #s
 serial_reader_dev_file="/dev/ttyACM0"
+serial_baudrate=9600
 serial_uid_not_sent_inactive_timeout=1 #s
 
 # HID parameters
@@ -179,10 +180,6 @@ from subprocess import Popen, DEVNULL, PIPE
 from multiprocessing import Process, Queue, Pipe
 from socket import socket, timeout, AF_UNIX, SOCK_STREAM, SOL_SOCKET, \
 		SO_REUSEADDR, SO_PEERCRED
-if watch_pcsc:
-  from smartcard.scard import *
-if watch_hid:
-  from evdev import InputDevice, categorize, ecodes  
 
 
 
@@ -243,6 +240,9 @@ def pcsc_listener(main_in_q):
   list of active UIDs to the main process
   """
 
+  # Modules
+  import smartcard.scard as sc
+
   setproctitle("sirfidal_server_pcsc_listener")
 
   # Wait for the status on the connected PC/SC readers to change and Get the
@@ -259,17 +259,17 @@ def pcsc_listener(main_in_q):
     readers=[]
   
     if not hcontext:
-      r, hcontext = SCardEstablishContext(SCARD_SCOPE_USER)
+      r, hcontext = sc.SCardEstablishContext(sc.SCARD_SCOPE_USER)
 
-      if r!=SCARD_S_SUCCESS:
+      if r!=sc.SCARD_S_SUCCESS:
         del(hcontext)
         hcontext=None
   
     if hcontext:
-      _, readers = SCardListReaders(hcontext, [])
+      _, readers = sc.SCardListReaders(hcontext, [])
 
       if not readers:
-        SCardReleaseContext(hcontext)
+        sc.SCardReleaseContext(hcontext)
         del(hcontext)
         hcontext=None
 
@@ -278,14 +278,14 @@ def pcsc_listener(main_in_q):
       rs=[]
       readers_prev=readers
       for i in range(len(readers)):
-        rs+=[(readers[i], SCARD_STATE_UNAWARE)]
+        rs+=[(readers[i], sc.SCARD_STATE_UNAWARE)]
 
       try:
-        _, rs = SCardGetStatusChange(hcontext, 0, rs)
+        _, rs = sc.SCardGetStatusChange(hcontext, 0, rs)
       except KeyboardInterrupt:
         return(-1)
       except:
-        SCardReleaseContext(hcontext)
+        sc.SCardReleaseContext(hcontext)
         del(hcontext)
         hcontext=None
         readers=[]
@@ -293,11 +293,12 @@ def pcsc_listener(main_in_q):
     if readers:
 
       try:
-        rv, rs = SCardGetStatusChange(hcontext, int(pcsc_read_every*1000), rs)
+        rv, rs = sc.SCardGetStatusChange(hcontext, int(pcsc_read_every * 1000),
+					 rs)
       except KeyboardInterrupt:
         return(-1)
       except:
-        SCardReleaseContext(hcontext)
+        sc.SCardReleaseContext(hcontext)
         del(hcontext)
         hcontext=None
         readers=[]
@@ -310,19 +311,19 @@ def pcsc_listener(main_in_q):
     main_in_q.put([MAIN_PROCESS_KEEPALIVE])
 
     # If a card's status has changed, re-read all the UIDs
-    if rv==SCARD_S_SUCCESS or send_initial_update:
+    if rv==sc.SCARD_S_SUCCESS or send_initial_update:
 
       for reader in readers:
 
         try:
 
-          hresult, hcard, dwActiveProtocol = SCardConnect(
+          hresult, hcard, dwActiveProtocol = sc.SCardConnect(
 		  hcontext,
 		  reader,
-		  SCARD_SHARE_SHARED,
-		  SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1
+		  sc.SCARD_SHARE_SHARED,
+		  sc.SCARD_PROTOCOL_T0 | sc.SCARD_PROTOCOL_T1
 		)
-          hresult, response = SCardTransmit(
+          hresult, response = sc.SCardTransmit(
 		  hcard,
 		  dwActiveProtocol,
 		  [0xFF, 0xCA, 0x00, 0x00, 0x00]
@@ -355,27 +356,30 @@ def serial_listener(main_in_q):
   they're readable, not just once when they're first read.
   """
 
-  setproctitle("sirfidal_server_serial_listener")
+  # Modules
+  from serial import Serial
 
-  fdevfile=None
+  setproctitle("sirfidal_server_serial_listener")
 
   recvbuf=""
 
   uid_lastseens={}
+
+  serdev=None
   send_active_uids_update=True
 
   while True:
 
     # Open the reader's device file if it's closed
-    if not fdevfile:
+    if not serdev:
       try:
-        fdevfile=open(serial_reader_dev_file, "rb", buffering=0)
+        serdev=Serial(serial_reader_dev_file, serial_baudrate, timeout=0)
       except KeyboardInterrupt:
         return(-1)
       except:
-        fdevfile=None
+        serdev=None
 
-    if not fdevfile:
+    if not serdev:
       sleep(2)	# Wait a bit to reopen the device
       continue
 
@@ -384,11 +388,11 @@ def serial_listener(main_in_q):
     b=""
     try:
 
-      if(select([fdevfile], [], [], serial_read_every)[0]):
+      if(select([serdev.fileno()], [], [], serial_read_every)[0]):
 
         try:
 
-          b=fdevfile.read(256).decode("ascii")
+          b=os.read(serdev.fileno(), 256).decode("ascii")
 
         except KeyboardInterrupt:
           return(-1)
@@ -397,10 +401,10 @@ def serial_listener(main_in_q):
 
         if not b:
           try:
-            fdevfile.close()
+            serdev.close()
           except:
             pass
-          fdevfile=None
+          serdev=None
           sleep(2)	# Wait a bit to reopen the device
           continue
 
@@ -419,10 +423,10 @@ def serial_listener(main_in_q):
       return(-1)
     except:
       try:
-        fdevfile.close()
+        serdev.close()
       except:
         pass
-      fdevfile=None
+      serdev=None
       sleep(2)	# Wait a bit to reopen the device
       continue
 
@@ -475,6 +479,9 @@ def hid_listener(main_in_q):
   However, that means client applications that depend on being able to assess
   continued authentication of a UID will not work correctly.
   """
+
+  # Modules
+  from evdev import InputDevice, categorize, ecodes  
 
   setproctitle("sirfidal_server_hid_listener")
 

@@ -110,6 +110,7 @@ As root:
 
       apt-get install python3-pyscard       # Needed to use PC/SC readers
       apt-get install python3-evdev         # Needed to use a HID reader
+      apt-get install python3-serial        # Needed to use a serial reader
       apt-get install python3-filelock
       apt-get install python3-psutil
       apt-get install python3-xdo           # Needed to run sirfidal_autotype
