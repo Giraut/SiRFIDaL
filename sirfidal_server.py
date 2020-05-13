@@ -9,8 +9,9 @@ The script performs the following functions:
 * Background functions
 
   - Handle reading RFID / NFC UIDs from different connected readers: several
-    PC/SC readers, a single serial reader, a single HID reader and an Android
-    device used as an external NFC reader may be watched concurrently
+    PC/SC readers, a single serial reader, a single HID reader, an Android
+    device used as an external NFC reader, and a Proxmark3 reader may be
+    watched concurrently
 
   - Internally maintain a list of of currently active UIDs - that is, the list
     of UIDs of RFID or NFC transponders currently readable by the readers at
@@ -118,17 +119,18 @@ See the parameters below to configure this script.
 
 ### Parameters
 # Types of RFID / NFC readers to watch
-watch_pcsc=True
-watch_serial=True
-watch_hid=True
-watch_adb=True	#Android device used as an external NFC reader
+watch_pcsc   =True
+watch_serial =True
+watch_hid    =True
+watch_adb    =True	#Android device used as an external NFC reader
+watch_pm3    =True	#Proxmark3 reader used as a "dumb" UID reader
 
 # PC/SC parameters
 pcsc_read_every=0.2 #s
 
 # Serial parameters
 serial_read_every=0.2 #s
-serial_reader_dev_file="/dev/ttyACM0"
+serial_reader_dev_file="/dev/ttyUSB0"
 serial_baudrate=9600
 serial_uid_not_sent_inactive_timeout=1 #s
 
@@ -144,6 +146,15 @@ adb_client="/usr/bin/adb"
 adb_nfcuid_log_prefix="nfcuid:"
 adb_persistent_mode=True
 adb_uid_timeout_in_non_persistent_mode=1 #s
+
+# Proxmark3 parameters
+pm3_read_every=0.2 #s
+pm3_reader_dev_file="/dev/ttyACM0"
+pm3_client="/usr/local/bin/proxmark3"
+pm3_client_log_dir="/var/log"
+pm3_lua_script="sirfidal_pm3_reader.lua"
+pm3_uid_prefix="uid:"
+pm3_client_comm_timeout=2 #s
 
 # Server parameters
 max_server_connections=10
@@ -184,31 +195,32 @@ from socket import socket, timeout, AF_UNIX, SOCK_STREAM, SOL_SOCKET, \
 
 
 ### Defines
-MAIN_PROCESS_KEEPALIVE=0
-PCSC_LISTENER_UIDS_UPDATE=1
-SERIAL_LISTENER_UIDS_UPDATE=2
-HID_LISTENER_UIDS_UPDATE=3
-ADB_LISTENER_UIDS_UPDATE=4
-NEW_CLIENT=5
-NEW_CLIENT_ACK=6
-VOID_REQUEST=7
-VOID_REQUEST_TIMEOUT=8
-WAITAUTH_REQUEST=9
-AUTH_RESULT=10
-AUTH_OK=11
-AUTH_NOK=12
-WATCHNBUIDS_REQUEST=13
-NBUIDS_UPDATE=14
-WATCHUIDS_REQUEST=15
-UIDS_UPDATE=16
-ADDUSER_REQUEST=17
-DELUSER_REQUEST=18
-ENCRUIDS_UPDATE=19
-ENCRUIDS_UPDATE_ERR_EXISTS=20
-ENCRUIDS_UPDATE_ERR_NONE=21
-ENCRUIDS_UPDATE_ERR_TIMEOUT=22
-CLIENT_HANDLER_STOP_REQUEST=23
-CLIENT_HANDLER_STOP=24
+MAIN_PROCESS_KEEPALIVE      =0
+PCSC_LISTENER_UIDS_UPDATE   =1
+SERIAL_LISTENER_UIDS_UPDATE =2
+HID_LISTENER_UIDS_UPDATE    =3
+ADB_LISTENER_UIDS_UPDATE    =4
+PM3_LISTENER_UIDS_UPDATE    =5
+NEW_CLIENT                  =6
+NEW_CLIENT_ACK              =7
+VOID_REQUEST                =8
+VOID_REQUEST_TIMEOUT        =9
+WAITAUTH_REQUEST            =10
+AUTH_RESULT                 =11
+AUTH_OK                     =12
+AUTH_NOK                    =13
+WATCHNBUIDS_REQUEST         =14
+NBUIDS_UPDATE               =15
+WATCHUIDS_REQUEST           =16
+UIDS_UPDATE                 =17
+ADDUSER_REQUEST             =18
+DELUSER_REQUEST             =19
+ENCRUIDS_UPDATE             =20
+ENCRUIDS_UPDATE_ERR_EXISTS  =21
+ENCRUIDS_UPDATE_ERR_NONE    =22
+ENCRUIDS_UPDATE_ERR_TIMEOUT =23
+CLIENT_HANDLER_STOP_REQUEST =24
+CLIENT_HANDLER_STOP         =25
 
 
 
@@ -761,6 +773,155 @@ def adb_listener(main_in_q):
 
 
 
+def pm3_listener(main_in_q):
+  """Proxmark3 listener
+  """
+
+  setproctitle("sirfidal_server_pm3_listener")
+
+  pm3_proc=[None]
+
+  # SIGCHLD handler to reap defunct proxmark3 processes when they quit or when
+  # we kill them
+  def sigchld_handler(sig, fname):
+    os.wait()
+    pm3_proc[0]=None
+
+  signal(SIGCHLD, sigchld_handler)
+
+  recvbuf=""
+
+  active_uids=[]
+  send_active_uids_update=True
+
+  while True:
+
+    # Try to spawn a proxmark3 client, making sure we chdir into a suitable log
+    # directory fist, because the proxmark3 client has this annoying habit of
+    # dropping a proxmark3.log file wherever it runs and there's no way to
+    # disable that behavior
+    if not pm3_proc[0]:
+      try:
+
+        os.chdir(pm3_client_log_dir)
+        pm3_proc[0]=Popen([pm3_client, pm3_reader_dev_file, "-l",
+				pm3_lua_script], bufsize=0,
+				stdin=DEVNULL, stdout=PIPE, stderr=DEVNULL)
+
+      except KeyboardInterrupt:
+        return(-1)
+      except:
+        pm3_proc[0]=None
+
+    if not pm3_proc[0]:
+      sleep(2)	# Wait a bit before trying to respawn a new client
+      continue
+
+    # Read lines from the proxmark3 client
+    rlines=[]
+    b=""
+    timeout_tstamp=int(datetime.now().timestamp()) + pm3_client_comm_timeout
+    try:
+
+      if(select([pm3_proc[0].stdout], [], [], pm3_read_every)[0]):
+
+        try:
+
+          b=pm3_proc[0].stdout.read(256).decode("ascii")
+
+        except KeyboardInterrupt:
+          return(-1)
+        except:
+          b=""
+
+        if not b:
+          if pm3_proc[0]:
+            try:
+              pm3_proc[0].kill()
+            except:
+              pass
+            pm3_proc[0]=None
+          sleep(2)	# Wait a bit before trying to respawn a new client
+          continue
+
+        # Split the data into lines
+        for c in b:
+
+          if c=="\n" or c=="\r":
+            rlines.append(recvbuf)
+            recvbuf=""
+
+          elif len(recvbuf)<256 and c.isprintable():
+            recvbuf+=c
+
+    except KeyboardInterrupt:
+      return(-1)
+    except:
+      if pm3_proc[0]:
+        try:
+          pm3_proc[0].kill()
+        except:
+          pass
+        pm3_proc[0]=None
+      sleep(2)	# Wait a bit before trying to respawn a new client
+      continue
+
+    tstamp=int(datetime.now().timestamp())
+
+    # Process the lines from the client
+    for l in rlines:
+
+      # If we detect a fatal error from the client that wasn't bubbled up to
+      # the lua script - preventing it from exiting cleanly - forcibly time out
+      # the client
+      if re.search("(failed|offline|#db#)", l):
+        timeout_tstamp=0
+        break
+
+      else:
+
+        # Match lines beginning with the prefix and followed by zero or more hex
+        # digits
+        m=re.findall("^{}([0-9A-F]*).*$".format(pm3_uid_prefix), l, re.I)
+        uid=m[0].upper() if m else None
+
+        # If we got a prefixed line, update the list of active UIDs, determine
+        # if we need to send an update to the main process, and push back the
+        # timeout
+        if uid!=None:
+          send_active_uids_update = (uid and len(active_uids)==0) or \
+					(not uid and len(active_uids)>0)
+          active_uids=[] if not uid else [uid]
+          timeout_tstamp=tstamp + pm3_client_comm_timeout
+
+    # Active UIDs update
+    if send_active_uids_update:
+
+      # Send the list of active UIDs to the main process...
+      main_in_q.put([PM3_LISTENER_UIDS_UPDATE, active_uids])
+
+      send_active_uids_update=False
+
+    else:
+
+      # ...else send a keepalive message to the main process so it can trigger
+      # timeouts
+      main_in_q.put([MAIN_PROCESS_KEEPALIVE])
+
+    # If we haven't received lines from the lua script for too long, or if we
+    # detected an error, kill the proxmark3 client
+    if tstamp > timeout_tstamp:
+      if pm3_proc[0]:
+        try:
+          pm3_proc[0].kill()
+        except:
+          pass
+        pm3_proc[0]=None
+      sleep(2)	# Wait a bit before trying to respawn a new client
+      continue
+
+
+
 def server(main_in_q, sock):
   """Handle client connections to the server
   """
@@ -1152,6 +1313,10 @@ def main():
   if watch_adb:
     Process(target=adb_listener, args=(main_in_q,)).start()
   
+  # Start the Proxmark3 listener
+  if watch_pm3:
+    Process(target=pm3_listener, args=(main_in_q,)).start()
+  
 
 
   # Main process
@@ -1159,6 +1324,7 @@ def main():
   active_serial_uids=[]
   active_hid_uids=[]
   active_adb_uids=[]
+  active_pm3_uids=[]
   active_uids=[]
   active_uids_prev=None
   auth_cache={}
@@ -1179,7 +1345,8 @@ def main():
       if msg[0] == PCSC_LISTENER_UIDS_UPDATE or \
 		msg[0] == SERIAL_LISTENER_UIDS_UPDATE or \
 		msg[0] == HID_LISTENER_UIDS_UPDATE or \
-		msg[0] == ADB_LISTENER_UIDS_UPDATE:
+		msg[0] == ADB_LISTENER_UIDS_UPDATE or \
+		msg[0] == PM3_LISTENER_UIDS_UPDATE:
 
         if msg[0] == PCSC_LISTENER_UIDS_UPDATE:
           active_pcsc_uids=msg[1]
@@ -1189,13 +1356,16 @@ def main():
           active_hid_uids=msg[1]
         elif msg[0] == ADB_LISTENER_UIDS_UPDATE:
           active_adb_uids=msg[1]
+        elif msg[0] == PM3_LISTENER_UIDS_UPDATE:
+          active_pm3_uids=msg[1]
 
         # Save the previous list of active UIDs
         active_uids_prev=active_uids
 
         # Merge the lists of UIDs from all the listeners
         active_uids=list(set(sorted(active_pcsc_uids + active_serial_uids + \
-				active_hid_uids + active_adb_uids)))
+				active_hid_uids + active_adb_uids + \
+				active_pm3_uids)))
 
         send_active_uids_update=True
 
