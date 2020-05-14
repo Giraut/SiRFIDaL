@@ -998,8 +998,8 @@ def pm3_listener(workdir, main_in_q):
       # timeouts
       main_in_q.put([MAIN_PROCESS_KEEPALIVE])
 
-    # If we haven't received lines from the lua script for too long, or if we
-    # detected an error, kill the Proxmark3 client
+    # If we haven't received lines from the Proxmark3 client for too long,
+    # kill it
     if tstamp > timeout_tstamp:
       if pm3_proc[0]:
         try:
