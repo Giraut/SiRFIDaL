@@ -152,13 +152,12 @@ pm3_read_every=0.2 #s
 pm3_reader_dev_file="/dev/ttyACM0"
 pm3_client="/usr/local/bin/proxmark3"
 pm3_client_workdir="/tmp"
+pm3_client_comm_timeout=2 #s
 pm3_read_iso14443a =True
 pm3_read_iso15693  =True
 pm3_read_em410x    =False
 pm3_read_indala    =False
 pm3_read_fdx       =False
-pm3_uid_not_sent_inactive_timeout=1 #s
-pm3_client_comm_timeout=2 #s
 
 # Server parameters
 max_server_connections=10
