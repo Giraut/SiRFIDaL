@@ -953,7 +953,7 @@ def pm3_listener(workdir, main_in_q):
 
           cmd_sequence_i=0
 
-        # Send the next command in the sequence if we're not done with it
+        # Send the next command in the sequence
         os.write(pty_master, (cmd_sequence[cmd_sequence_i] + "\r").
 				encode("ascii"))
         cmd_sequence_i+=1
