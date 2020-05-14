@@ -857,8 +857,8 @@ def pm3_listener(workdir, main_in_q):
   while True:
 
     # Try to spawn a Proxmark3 client, making sure we first chdir into its
-    # working directory where am unwritable "proxmark3.log" file is already
-    # present
+    # working directory where a fake "proxmark3.log" symlink to /dev/null is
+    # already present
     if not pm3_proc[0]:
       try:
 
