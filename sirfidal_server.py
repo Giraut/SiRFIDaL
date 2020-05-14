@@ -151,9 +151,13 @@ adb_uid_timeout_in_non_persistent_mode=1 #s
 pm3_read_every=0.2 #s
 pm3_reader_dev_file="/dev/ttyACM0"
 pm3_client="/usr/local/bin/proxmark3"
-pm3_client_log_dir="/var/log"
-pm3_lua_script="sirfidal_pm3_reader.lua"
-pm3_uid_prefix="uid:"
+pm3_client_workdir="/tmp"
+pm3_read_iso14443a =True
+pm3_read_iso15693  =True
+pm3_read_em410x    =False
+pm3_read_indala    =False
+pm3_read_fdx       =False
+pm3_uid_not_sent_inactive_timeout=1 #s
 pm3_client_comm_timeout=2 #s
 
 # Server parameters
@@ -180,6 +184,7 @@ import json
 import struct
 import psutil
 from time import sleep
+from pty import openpty
 from select import select
 from string import hexdigits
 from datetime import datetime
@@ -773,8 +778,22 @@ def adb_listener(main_in_q):
 
 
 
-def pm3_listener(main_in_q):
-  """Proxmark3 listener
+def pm3_listener(workdir, main_in_q):
+  """Read UIDs from a Proxmark3 reader.
+
+  The Proxmark3 makes a pretty poor "dumb" reader because it just wasn't build
+  for that. It does many thing in software, involving shuttling a lot of data
+  from the reader to the computer through the USB port, that dedicated readers
+  do internally much faster.
+
+  As a result, the Proxmark3 is quite slow to poll transponders repeatedly.
+  It's exceptionally slow when mixing HF and LF transponders, as it takes
+  seconds to reconfigure itself for operation on another frequency. So if you
+  want any kind of performance, stick to HF- or LF-only transponders.
+
+  Although you'd be better served by a cheap dedicated reader, if you really
+  need to use a Proxmark3 with SiRFIDaL (to read transponders that other
+  readers can't read for instance), it works.
   """
 
   setproctitle("sirfidal_server_pm3_listener")
@@ -789,24 +808,64 @@ def pm3_listener(main_in_q):
 
   signal(SIGCHLD, sigchld_handler)
 
+  # Create a PTY pair to fool the Proxmark3 client into working interactively
+  pty_master, pty_slave = openpty()
+
+  # Build the command sequence necessary to perform the reads requested in the
+  # parameters
+  cmd_sequence=[]
+  lf_samples=0
+
+  if pm3_read_iso14443a:
+    cmd_sequence.append("hf 14a reader -3")
+
+  if pm3_read_iso15693:
+    cmd_sequence.append("hf 15 cmd sysinfo u")
+
+  if pm3_read_em410x:
+    lf_samples=8201
+  if pm3_read_indala:
+    lf_samples=30000
+  if pm3_read_fdx:
+    lf_samples=39999
+
+  if lf_samples:
+    cmd_sequence.append("lf read s {}".format(lf_samples))
+
+  if pm3_read_em410x:
+    cmd_sequence.append("lf em 410xdemod")
+
+  if pm3_read_indala:
+    cmd_sequence.append("lf indala demod")
+
+  if pm3_read_fdx:
+    cmd_sequence.append("lf fdx demod")
+
+  # Proxmark3's console prompt
+  pm3_prompt="proxmark3>"
+
   recvbuf=""
 
   active_uids=[]
+  active_uids_prev=[]
+
+  in_indala_multiline_uid=False
   send_active_uids_update=True
+
+  cmd_sequence_i=0
 
   while True:
 
-    # Try to spawn a proxmark3 client, making sure we chdir into a suitable log
-    # directory fist, because the proxmark3 client has this annoying habit of
-    # dropping a proxmark3.log file wherever it runs and there's no way to
-    # disable that behavior
+    # Try to spawn a Proxmark3 client, making sure we first chdir into its
+    # working directory where am unwritable "proxmark3.log" file is already
+    # present
     if not pm3_proc[0]:
       try:
 
-        os.chdir(pm3_client_log_dir)
-        pm3_proc[0]=Popen([pm3_client, pm3_reader_dev_file, "-l",
-				pm3_lua_script], bufsize=0,
-				stdin=DEVNULL, stdout=PIPE, stderr=DEVNULL)
+        os.chdir(workdir)
+        pm3_proc[0]=Popen([pm3_client, pm3_reader_dev_file], bufsize=0,
+				stdin=pty_slave, stdout=PIPE, stderr=DEVNULL)
+        timeout_tstamp=int(datetime.now().timestamp()) + pm3_client_comm_timeout
 
       except KeyboardInterrupt:
         return(-1)
@@ -817,10 +876,9 @@ def pm3_listener(main_in_q):
       sleep(2)	# Wait a bit before trying to respawn a new client
       continue
 
-    # Read lines from the proxmark3 client
+    # Read lines from the Proxmark3 client
     rlines=[]
     b=""
-    timeout_tstamp=int(datetime.now().timestamp()) + pm3_client_comm_timeout
     try:
 
       if(select([pm3_proc[0].stdout], [], [], pm3_read_every)[0]):
@@ -844,10 +902,11 @@ def pm3_listener(main_in_q):
           sleep(2)	# Wait a bit before trying to respawn a new client
           continue
 
-        # Split the data into lines
+        # Split the data into lines. If we get a prompt that doesn't end with
+        # a CR or LF, make it into a line also
         for c in b:
 
-          if c=="\n" or c=="\r":
+          if c=="\n" or c=="\r" or recvbuf==pm3_prompt:
             rlines.append(recvbuf)
             recvbuf=""
 
@@ -871,35 +930,68 @@ def pm3_listener(main_in_q):
     # Process the lines from the client
     for l in rlines:
 
-      # If we detect a fatal error from the client that wasn't bubbled up to
-      # the lua script - preventing it from exiting cleanly - forcibly time out
-      # the client
-      if re.search("(failed|offline|#db#)", l):
+      timeout_tstamp=tstamp + pm3_client_comm_timeout
+
+      # If we detect a fatal error from the client, forcibly it time out
+      if re.search("(proxmark failed|offline|unknown command)", l):
         timeout_tstamp=0
         break
 
+      # We have a prompt
+      if l==pm3_prompt:
+
+        # If we reached the end of the command sequence, find out if the list
+        # of active UIDs has changed and start over
+        if cmd_sequence_i >= len(cmd_sequence):
+
+          active_uids=sorted(active_uids)
+
+          if active_uids != active_uids_prev:
+            send_active_uids_update=True
+
+          active_uids_prev=active_uids
+          active_uids=[]
+
+          cmd_sequence_i=0
+
+        # Send the next command in the sequence if we're not done with it
+        os.write(pty_master, (cmd_sequence[cmd_sequence_i] + "\r").
+				encode("ascii"))
+        cmd_sequence_i+=1
+
+      uid=None
+
+      # Match Indala multiline UIDs
+      if in_indala_multiline_uid:
+        m=re.findall("^ \(([0-9a-f]*)\)\s*$", l)
+        if m:
+          uid=m[0]
+          in_indala_multiline_uid=False
+        elif not re.match("^[01]+\s*$", l):
+          in_indala_multiline_uid=False
+
       else:
+        if re.match("^\s*Indala UID=[01]+\s*$", l):
+          in_indala_multiline_uid=True
 
-        # Match lines beginning with the prefix and followed by zero or more hex
-        # digits
-        m=re.findall("^{}([0-9A-F]*).*$".format(pm3_uid_prefix), l, re.I)
-        uid=m[0].upper() if m else None
 
-        # If we got a prefixed line, update the list of active UIDs, determine
-        # if we need to send an update to the main process, and push back the
-        # timeout
-        if uid!=None:
-          send_active_uids_update = (uid and len(active_uids)==0) or \
-					(not uid and len(active_uids)>0)
-          active_uids=[] if not uid else [uid]
-          timeout_tstamp=tstamp + pm3_client_comm_timeout
+      # Match single lines containing UIDs
+      if not uid and not in_indala_multiline_uid:
+        m=re.findall("^\s*(UID|EM TAG ID|Animal ID)\s*:\s*([0-9a-fA-F- ]+)$", l)
+        uid=m[0][1] if m else None
 
-    # Active UIDs update
+      # We got a UID: strip anything not hexadecimal out of the UID and
+      # uppercase it, so it has a chance to be compatible with UIDs read by the
+      # other listeners, then add it to the list of active UIDs
+      if uid:
+        uid="".join([c for c in uid.upper() if c in hexdigits])
+        active_uids.append(uid)
+
+    # If the active UIDs have changed...
     if send_active_uids_update:
 
-      # Send the list of active UIDs to the main process...
-      main_in_q.put([PM3_LISTENER_UIDS_UPDATE, active_uids])
-
+      # ...send the list to the main process...
+      main_in_q.put([PM3_LISTENER_UIDS_UPDATE, active_uids_prev])
       send_active_uids_update=False
 
     else:
@@ -909,7 +1001,7 @@ def pm3_listener(main_in_q):
       main_in_q.put([MAIN_PROCESS_KEEPALIVE])
 
     # If we haven't received lines from the lua script for too long, or if we
-    # detected an error, kill the proxmark3 client
+    # detected an error, kill the Proxmark3 client
     if tstamp > timeout_tstamp:
       if pm3_proc[0]:
         try:
@@ -1274,6 +1366,25 @@ def main():
   # Main routine's input queue
   main_in_q=Queue()
 
+  # If we use a Proxmark3 client as a backend, create a "proxmark3.log" symlink
+  # to /dev/null in its working directory to prevent it from logging anything
+  if watch_pm3:
+
+    pm3_logfile=os.path.join(pm3_client_workdir, "proxmark3.log")
+
+    if os.path.exists(pm3_logfile):
+      if not os.path.islink(pm3_logfile):
+        print("Error: {} already exists and isn't a symlink. Giving up.".format(
+						pm3_logfile))
+        return(-1)
+    else:
+      try:
+        os.symlink(os.devnull, pm3_logfile)
+      except:
+        print("Error: cannot symlink {} to {}. Giving up.".format(
+						pm3_logfile, os.devnull))
+        return(-1)
+
   # Set up the server's socket
   sock=socket(AF_UNIX, SOCK_STREAM)
 
@@ -1315,7 +1426,7 @@ def main():
   
   # Start the Proxmark3 listener
   if watch_pm3:
-    Process(target=pm3_listener, args=(main_in_q,)).start()
+    Process(target=pm3_listener, args=(pm3_client_workdir,main_in_q,)).start()
   
 
 

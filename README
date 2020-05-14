@@ -108,14 +108,16 @@ As root:
 
     * Use with a Proxmark3 reader:
 
-       - Copy the sirfidal_pm3_reader.lua script into your Proxmark3 client's
-         scripts directory
        - set pm3_client to the path of your Proxmark3 client's executable in
          sirfidal_server.py
        - Set pm3_reader_dev_file to the device file corresponding to your
          Proxmark3 in sirfidal_server.py
-       - Make sure watch_pm3 is set to True in sirfidal_server.py in
-         sirfidal_server.py
+       - Enable of disable the different types of transponders you want to be
+         able to read with the pm3_read_* lines. Several types of transponders
+         may be enabled at the same time, but be aware that if you mix LF and HF
+         transponders, the reader will be extremely slow. For best performances,
+         enable only HF transponders or only LF transponders, but not both.
+       - Make sure watch_pm3 is set to True in sirfidal_server.py
 
     * Python3 modules needed:
 
