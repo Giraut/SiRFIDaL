@@ -974,7 +974,6 @@ def pm3_listener(workdir, main_in_q):
         if re.match("^\s*Indala UID=[01]+\s*$", l):
           in_indala_multiline_uid=True
 
-
       # Match single lines containing UIDs
       if not uid and not in_indala_multiline_uid:
         m=re.findall("^\s*(UID|EM TAG ID|Animal ID)\s*:\s*([0-9a-fA-F- ]+)$", l)
