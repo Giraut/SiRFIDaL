@@ -931,7 +931,7 @@ def pm3_listener(workdir, main_in_q):
 
       timeout_tstamp=tstamp + pm3_client_comm_timeout
 
-      # If we detect a fatal error from the client, forcibly it time out
+      # If we detect a fatal error from the client, forcibly time it out
       if re.search("(proxmark failed|offline|unknown command)", l):
         timeout_tstamp=0
         break
