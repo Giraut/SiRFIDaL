@@ -154,7 +154,7 @@ pm3_client="/usr/local/bin/proxmark3"
 pm3_client_workdir="/tmp"
 pm3_client_comm_timeout=2 #s
 pm3_read_iso14443a =True
-pm3_read_iso15693  =True
+pm3_read_iso15693  =False
 pm3_read_em410x    =False
 pm3_read_indala    =False
 pm3_read_fdx       =False
@@ -812,41 +812,50 @@ def pm3_listener(workdir, main_in_q):
 
   # Build the command sequence necessary to perform the reads requested in the
   # parameters
-  cmd_sequence=[]
+  cmd_sequence_normal=[]
+  cmd_sequence_iceman=[]
   lf_samples=0
 
   if pm3_read_iso14443a:
-    cmd_sequence.append("hf 14a reader -3")
+    cmd_sequence_normal.append("hf 14a reader -3")
+    cmd_sequence_iceman.append("hf 14a reader")
 
   if pm3_read_iso15693:
-    cmd_sequence.append("hf 15 cmd sysinfo u")
+    cmd_sequence_normal.append("hf 15 cmd sysinfo u")
+    cmd_sequence_iceman.append("hf 15 info u")
 
   if pm3_read_em410x:
-    lf_samples=8201
-  if pm3_read_indala:
-    lf_samples=30000
+    lf_samples=12288
   if pm3_read_fdx:
-    lf_samples=39999
+    lf_samples=15000
+  if pm3_read_indala:
+    lf_samples=25000
 
   if lf_samples:
-    cmd_sequence.append("lf read s {}".format(lf_samples))
-
-  if pm3_read_em410x:
-    cmd_sequence.append("lf em 410xdemod")
+    cmd_sequence_normal.append("lf read s {}".format(lf_samples))
+    cmd_sequence_iceman.append("lf read s d {}".format(lf_samples))
 
   if pm3_read_indala:
-    cmd_sequence.append("lf indala demod")
+    cmd_sequence_normal.append("lf indala demod")
+    cmd_sequence_iceman.append("lf indala demod")
+
+  if pm3_read_em410x:
+    cmd_sequence_normal.append("lf em 410xdemod")
+    cmd_sequence_iceman.append("lf em 410x_demod")
 
   if pm3_read_fdx:
-    cmd_sequence.append("lf fdx demod")
+    cmd_sequence_normal.append("lf fdx demod")
+    cmd_sequence_iceman.append("lf fdx demod")
 
-  # Proxmark3's console prompt
-  pm3_prompt="proxmark3>"
+  cmd_sequence=cmd_sequence_normal	# Default sequence
+
+  # Possible Proxmark3 console prompts
+  pm3_prompts_regex=re.compile("^(proxmark3>|\[.*\] pm3 -->)$")
 
   recvbuf=""
 
+  active_uids_temp=[]
   active_uids=[]
-  active_uids_prev=[]
 
   in_indala_multiline_uid=False
   send_active_uids_update=True
@@ -857,12 +866,14 @@ def pm3_listener(workdir, main_in_q):
 
     # Try to spawn a Proxmark3 client, making sure we first chdir into its
     # working directory where a fake "proxmark3.log" symlink to /dev/null is
-    # already present
+    # already present (normal Proxmark3 client) and without a HOME environment
+    # variable so the Iceman client doesn't know where to drop a .proxmark3
+    # directory and log things in it
     if not pm3_proc[0]:
       try:
 
         os.chdir(workdir)
-        pm3_proc[0]=Popen([pm3_client, pm3_reader_dev_file], bufsize=0,
+        pm3_proc[0]=Popen([pm3_client, pm3_reader_dev_file], bufsize=0, env={},
 				stdin=pty_slave, stdout=PIPE, stderr=DEVNULL)
         timeout_tstamp=int(datetime.now().timestamp()) + pm3_client_comm_timeout
 
@@ -905,7 +916,7 @@ def pm3_listener(workdir, main_in_q):
         # a CR or LF, make it into a line also
         for c in b:
 
-          if c=="\n" or c=="\r" or recvbuf==pm3_prompt:
+          if c=="\n" or c=="\r" or pm3_prompts_regex.match(recvbuf):
             rlines.append(recvbuf)
             recvbuf=""
 
@@ -931,25 +942,27 @@ def pm3_listener(workdir, main_in_q):
 
       timeout_tstamp=tstamp + pm3_client_comm_timeout
 
+      # If we an RRG/Iceman build, change the command sequence
+      if cmd_sequence==cmd_sequence_normal and re.search("RRG/Iceman", l):
+        cmd_sequence=cmd_sequence_iceman
+
       # If we detect a fatal error from the client, forcibly time it out
-      if re.search("(proxmark failed|offline|unknown command)", l):
+      if re.search("(proxmark failed|offline|OFFLINE|unknown command)", l):
         timeout_tstamp=0
         break
 
       # We have a prompt
-      if l==pm3_prompt:
+      if pm3_prompts_regex.match(l):
 
-        # If we reached the end of the command sequence, find out if the list
-        # of active UIDs has changed and start over
+        # If we reached the end of the command sequence, find out if the
+        # complete list of active UIDs has changed and start over
         if cmd_sequence_i >= len(cmd_sequence):
 
-          active_uids=sorted(active_uids)
-
-          if active_uids != active_uids_prev:
+          if active_uids_temp != active_uids:
+            active_uids=active_uids_temp
             send_active_uids_update=True
 
-          active_uids_prev=active_uids
-          active_uids=[]
+          active_uids_temp=[]
 
           cmd_sequence_i=0
 
@@ -975,7 +988,9 @@ def pm3_listener(workdir, main_in_q):
 
       # Match single lines containing UIDs
       if not uid and not in_indala_multiline_uid:
-        m=re.findall("^\s*(UID|EM TAG ID|Animal ID)\s*:\s*([0-9a-fA-F- ]+)$", l)
+        m=re.findall("[\[\]+\s]*" \
+			"(UID|EM TAG ID|Indala Found .* Raw\s+0x|Animal ID)" \
+			"[\s:]*([0-9a-fA-F- ]+)$", l)
         uid=m[0][1] if m else None
 
       # We got a UID: strip anything not hexadecimal out of the UID and
@@ -983,13 +998,14 @@ def pm3_listener(workdir, main_in_q):
       # other listeners, then add it to the list of active UIDs
       if uid:
         uid="".join([c for c in uid.upper() if c in hexdigits])
-        active_uids.append(uid)
+        active_uids_temp=sorted(active_uids_temp + [uid])
+        if uid not in active_uids:
+          active_uids=sorted(active_uids + [uid])
+          send_active_uids_update=True
 
-    # If the active UIDs have changed...
+    # If the list of active UIDs has changed, send it to the main process
     if send_active_uids_update:
-
-      # ...send the list to the main process...
-      main_in_q.put([PM3_LISTENER_UIDS_UPDATE, active_uids_prev])
+      main_in_q.put([PM3_LISTENER_UIDS_UPDATE, active_uids])
       send_active_uids_update=False
 
     else:
@@ -1364,8 +1380,9 @@ def main():
   # Main routine's input queue
   main_in_q=Queue()
 
-  # If we use a Proxmark3 client as a backend, create a "proxmark3.log" symlink
-  # to /dev/null in its working directory to prevent it from logging anything
+  # If we use a normal Proxmark3 client as a backend, create a "proxmark3.log"
+  # symlink to /dev/null in its working directory to prevent it from logging
+  # anything
   if watch_pm3:
 
     pm3_logfile=os.path.join(pm3_client_workdir, "proxmark3.log")
