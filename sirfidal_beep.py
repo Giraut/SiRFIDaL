@@ -21,63 +21,79 @@ default_up_sound_file="sounds/up.wav"
 default_down_sound_file="sounds/down.wav"
 socket_path="/tmp/sirfidal_server.socket"
 
+# Comment this out to use pyaudio instead of an external player
+external_player_command="/usr/bin/play {sndfile}"
+
 
 
 ### Modules
 import re
 import os
 import sys
-import wave
 import argparse
 from time import sleep
-from pyaudio import PyAudio
 from socket import socket, AF_UNIX, SOCK_STREAM, SOL_SOCKET, SO_PASSCRED
+
+if "external_player_command" in globals() and external_player_command:
+  from subprocess import Popen, DEVNULL
+else:
+  import wave
+  from pyaudio import PyAudio
+  external_player_command=None
 
 
 
 ### Subroutines
 def play_wav_file(fpath):
 
-  # Open the WAV file
-  f=wave.open(fpath, "rb")
+  # Use an external player
+  if external_player_command:
+    Popen(external_player_command.format(sndfile=fpath).split(),
+				stdin=DEVNULL, stdout=DEVNULL, stderr=DEVNULL)
 
-  # Redirect stderr to /dev/null to hide useless PortAudio messages
-  devnull=os.open(os.devnull, os.O_WRONLY)
-  old_stderr=os.dup(2)
-  sys.stderr.flush()
-  os.dup2(devnull, 2)
-  os.close(devnull)
+  # Use pyaudio
+  else:
 
-  try:
-    p=PyAudio()
-  except:
+    # Open the WAV file
+    f=wave.open(fpath, "rb")
+
+    # Redirect stderr to /dev/null to hide useless PortAudio messages
+    devnull=os.open(os.devnull, os.O_WRONLY)
+    old_stderr=os.dup(2)
+    sys.stderr.flush()
+    os.dup2(devnull, 2)
+    os.close(devnull)
+
+    try:
+      p=PyAudio()
+    except:
+      # Restore stderr
+      os.dup2(old_stderr, 2)
+      os.close(old_stderr)
+      raise
+
     # Restore stderr
     os.dup2(old_stderr, 2)
     os.close(old_stderr)
-    raise
 
-  # Restore stderr
-  os.dup2(old_stderr, 2)
-  os.close(old_stderr)
+    # Open the stream
+    stream=p.open(
+  	  format=p.get_format_from_width(f.getsampwidth()),
+  	  channels=f.getnchannels(),
+  	  rate=f.getframerate(),
+  	  output=True
+  	)
 
-  # Open the stream
-  stream=p.open(
-	  format=p.get_format_from_width(f.getsampwidth()),
-	  channels=f.getnchannels(),
-	  rate=f.getframerate(),
-	  output=True
-	)
-
-  # Send the WAV file to the stream in chunks
-  data=f.readframes(1024)
-  while data:
-    stream.write(data)
+    # Send the WAV file to the stream in chunks
     data=f.readframes(1024)
+    while data:
+      stream.write(data)
+      data=f.readframes(1024)
 
-  stream.stop_stream()
-  stream.close()
+    stream.stop_stream()
+    stream.close()
 
-  p.terminate()
+    p.terminate()
 
 
 

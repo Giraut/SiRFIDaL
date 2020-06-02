@@ -128,7 +128,10 @@ As root:
       apt-get install python3-psutil
       apt-get install python3-xdo           # Needed to run sirfidal_autotype
       apt-get install python3-cryptography  # Needed to run sirfidal_autotype
-      apt-get install python3-pyaudio       # Needed to run sirfidal_beep
+
+    * Optional external programs
+
+      apt-get install sox                   # Needed to run sirfidal_beep
 
   * Copy the files:
 
