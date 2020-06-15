@@ -138,7 +138,7 @@ Auth-Initial:
 For this to work, the master UID needs to be registered as an authenticated
 SiRFIDaL user "master" with sirfidal_useradm:
 
-sirfidal_useradm -a master
+sirfidal_useradm.py -a master
 
 It only needs to be done once. The "master" user doesn't have to exist as a
 Unix user, as it's only known to SiRFIDaL.
@@ -197,7 +197,7 @@ Auth-Initial:
 For this to work, the supervisor's UID needs to be registered as authenticated
 SiRFIDaL user "supervisor" with sirfidal_useradm:
 
-sirfidal_useradm -a supervisor
+sirfidal_useradm.py -a supervisor
 
 It only needs to be done once. The "supervisor" user doesn't have to exist as a
 Unix user, as it's only known to SiRFIDaL.
