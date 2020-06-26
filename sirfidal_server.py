@@ -556,7 +556,16 @@ def hid_listener(main_in_q):
     # read scancodes
     if fds:
 
-      for event in hiddev.read():
+      try:
+        events=list(hiddev.read())
+      except:
+        if hiddev:
+          hiddev.close()
+        hiddev=None
+        sleep(2)	# Wait a bit as the device file is probably unavailable
+        continue
+
+      for event in events:
 
         if event.type == ecodes.EV_KEY:
 
