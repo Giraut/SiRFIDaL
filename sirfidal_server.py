@@ -951,7 +951,7 @@ def pm3_listener(workdir, main_in_q):
 
       timeout_tstamp=tstamp + pm3_client_comm_timeout
 
-      # If we an RRG/Iceman build, change the command sequence
+      # If we detect an RRG/Iceman build, change the command sequence
       if cmd_sequence==cmd_sequence_normal and re.search("RRG/Iceman", l):
         cmd_sequence=cmd_sequence_iceman
 
