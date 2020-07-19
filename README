@@ -23,38 +23,50 @@ tokens on a Linux computer - typically for login purposes.
 
 The utilities included are:
 
-- sirfidal_server          Core program used by all the others. It manages RFID
-                           or NFC readers and authenticates users against
-                           RFID / NFC UIDs on behalf of other programs.
+- sirfidal_server                    Core program used by all the others.
+                                     It manages RFID or NFC readers and
+                                     authenticates users against RFID / NFC
+                                     UIDs on behalf of other programs.
 
-- sirfidal_pam             PAM module that uses the SiRFIDaL server to
-                           authenticate users against RFID or NFC UIDs,
-                           typcally to login.
+- sirfidal_pam                       PAM module that uses the SiRFIDaL server to
+                                     authenticate users against RFID or NFC
+                                     UIDs, typcally to login.
 
-- sirfidal_useradm         Utility to add or delete users allowed to
-                           authenticate with RFID / NFC UIDs.
+- sirfidal_useradm                   Utility to add or delete users allowed to
+                                     authenticate with RFID / NFC UIDs.
 
-- sirfidal_beep            Program to beep when a RFID or NFC transponder is
-                           read by a reader, or taken off the reader.
+- sirfidal_beep                      Program to beep when a RFID or NFC
+                                     transponder is read by a reader, or taken
+                                     off the reader.
 
-- sirfidal_autolockscreen  Program to lock/unlock a graphical interface
-                           screensaver automatically using authenticated RFID
-                           or NFC transponders.
+- sirfidal_autolockscreen            Program to lock/unlock a graphical
+                                     interface screensaver automatically using
+                                     authenticated RFID or NFC transponders.
 
-- sirfidal_autotype        Program to automatically type custom strings in
-                           predefined application X windows (passwords for
-                           example) upon authenticating with a RFID or NFC
-                           transponder.
+- sirfidal_autotype                  Program to automatically type custom
+                                     strings in predefined X application
+                                     windows (passwords for example) upon
+                                     authenticating with a RFID or NFC
+                                     transponder.
 
-- sirfidal_keyboard_wedge  Program to emulate a keyboard wedge RFID / NFC
-                           reader, by typing out the UIDs read by the SiRFIDaL
-                           server as if they came from a keyboard. This
-                           utility must be run as root.
+- sirfidal_keyboard_wedge            Program to emulate a RFID / NFC keyboard
+                                     wedge reader, by typing out the UIDs read
+                                     by the SiRFIDaL server as if they came
+                                     from a keyboard. This utility must be run
+                                     as root.
 
-- sirfidal_getuids         Continuously displays new UIDs being read by the
-                           SiRFIDaL server. This utility must be run as root,
-                           as the SiRFIDaL server will not expose actual UIDs
-                           to non-root users.
+- sirfidal_getuids                   Continuously displays new UIDs being read
+                                     by the SiRFIDaL server. This utility must
+                                     be run as root, as the SiRFIDaL server will
+                                     not expose actual UIDs to non-root users.
+
+- sirfidal_auto_send_enter_at_login  Utility that uses sirfidal_getuids to
+                                     automatically type ENTER in a console or
+                                     graphical login screen when a RFID / NFC
+                                     transponder is read by the SiRFIDaL server,
+                                     to avoid having to type an empty password
+                                     when using pam_unix and sirfidal_pam
+                                     together in the same PAM configuration.
 
 
 
@@ -126,12 +138,14 @@ As root:
       apt-get install python3-serial        # Needed to use a serial reader
       apt-get install python3-filelock
       apt-get install python3-psutil
-      apt-get install python3-xdo           # Needed to run sirfidal_autotype
-      apt-get install python3-cryptography  # Needed to run sirfidal_autotype
+      apt-get install python3-cryptography  # Needed by sirfidal_autotype
+      apt-get install python3-xdo           # Needed by sirfidal_autotype and
+                                            # sirfidal_auto_send_enter_at_login
 
     * Optional external programs
 
-      apt-get install sox                   # Needed to run sirfidal_beep
+      apt-get install sox          # Needed by sirfidal_beep
+      apt-get install wmctrl       # Needed by sirfidal_auto_send_enter_at_login
 
   * Copy the files:
 
@@ -146,11 +160,17 @@ As root:
     systemctl enable sirfidal_server
     systemctl start sirfidal_server
 
-    systemctl enable sirfidal_beep            # Optional
-    systemctl start sirfidal_beep             # Optional
+    systemctl enable sirfidal_beep                      # Optional
+    systemctl start sirfidal_beep                       # Optional
 
-    systemctl enable sirfidal_keyboard_wedge  # Optional
-    systemctl start sirfidal_keyboard_wedge   # Optional
+    systemctl enable sirfidal_keyboard_wedge            # Optional
+    systemctl start sirfidal_keyboard_wedge             # Optional
+
+    systemctl enable sirfidal_keyboard_wedge            # Optional
+    systemctl start sirfidal_keyboard_wedge             # Optional
+
+    systemctl enable sirfidal_auto_send_enter_at_login  # Optional
+    systemctl start sirfidal_auto_send_enter_at_login   # Optional
 
   * Configure PAM for single factor authentication (password or RFID / NFC):
 
