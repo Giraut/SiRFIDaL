@@ -261,7 +261,7 @@ def main():
 
     # Is getty and/or login attached to the virtual console and no session
     # open?
-    if is_console_session_running(vc)==False:
+    elif is_console_session_running(vc)==False:
 
       # Send the keystroke sequence corresponding to ENTER to the console
       try:
