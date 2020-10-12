@@ -26,7 +26,7 @@ The script performs the following functions:
   - Authenticate a user against one of the currently active UIDs, waiting for
     up to a requested time for a successful authentication
 
-  - Add an authenticate user - i.e. associate a user with a single currently
+  - Add an authenticated user - i.e. associate a user with a single currently
     active UID and save this association in the encrypted UIDs file
 
   - Delete an authenticated user - i.e. disassociate a user from a single
