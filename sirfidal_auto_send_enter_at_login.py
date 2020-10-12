@@ -250,7 +250,7 @@ def main():
         os.environ["DISPLAY"]=display_prev
       else:
         os.environ.pop("DISPLAY")
-      if display_prev:
+      if xauthority_prev:
         os.environ["XAUTHORITY"]=xauthority_prev
       else:
         os.environ.pop("XAUTHORITY")
