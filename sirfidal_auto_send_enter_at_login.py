@@ -210,7 +210,7 @@ def main():
     display, xauthfile = xorg_attached_to_vc(vc)
     if display and xauthfile:
     
-      # If a display manager is running on the X server, a session is already
+      # If a window manager is running on the X server, a session is already
       # open, so give up. Also give up in case of error checking the display
       # manager
       if is_wm_running(display, xauthfile)!=False:
