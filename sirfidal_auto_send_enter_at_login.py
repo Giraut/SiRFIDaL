@@ -64,7 +64,7 @@ def active_vc():
 
 
 def is_console_session_running(vc):
-  """Returns True if no processes other than getty or login are attached to a
+  """Returns True if processes other than getty or login are attached to a
   virtual console, False if getty, login or both are attached but nothing else,
   and None in case of error
   """

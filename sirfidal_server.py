@@ -1091,7 +1091,7 @@ def server(main_in_q, sock):
 
 def client_handler(pid, uid, gid, pw_name,
 			main_in_q, main_out_p, chandler_out_p, conn):
-  """Handler communications between the client and the main process
+  """Handler for communications between the client and the main process
   """
 
   setproctitle("sirfidal_server_client_handler_{}".format(pid))
