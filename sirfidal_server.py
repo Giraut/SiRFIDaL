@@ -10,8 +10,8 @@ The script performs the following functions:
 
   - Handle reading RFID / NFC UIDs from different connected readers: several
     PC/SC readers, a single serial reader, a single HID reader, an Android
-    device used as an external NFC reader, and a Proxmark3 reader may be
-    watched concurrently
+    device used as an external NFC reader, a Proxmark3 reader and a
+    Chameleon Mini / Tiny may be watched concurrently
 
   - Internally maintain a list of of currently active UIDs - that is, the list
     of UIDs of RFID or NFC transponders currently readable by the readers at
@@ -119,11 +119,12 @@ See the parameters below to configure this script.
 
 ### Parameters
 # Types of RFID / NFC readers to watch
-watch_pcsc   =True
-watch_serial =True
-watch_hid    =True
-watch_adb    =True	#Android device used as an external NFC reader
-watch_pm3    =True	#Proxmark3 reader used as a "dumb" UID reader
+watch_pcsc      =True
+watch_serial    =False
+watch_hid       =False
+watch_adb       =False	#Android device used as an external NFC reader
+watch_pm3       =False	#Proxmark3 reader used as a "dumb" UID reader
+watch_chameleon =False	#Chameleon Mini / Tiny used as an external NFC reader
 
 # PC/SC parameters
 pcsc_read_every=0.2 #s
@@ -158,6 +159,13 @@ pm3_read_iso15693  =False
 pm3_read_em410x    =False
 pm3_read_indala    =False
 pm3_read_fdx       =False
+
+# Chameleon Mini / Tiny parameters
+chameleon_read_every=0.2 #s
+chameleon_dev_file="/dev/ttyACM0"
+chameleon_iso14443a_reader_slot=8
+chameleon_client_comm_timeout=2 #s
+chameleon_uid_not_sent_inactive_timeout=1 #s
 
 # Server parameters
 max_server_connections=10
@@ -199,32 +207,33 @@ from socket import socket, timeout, AF_UNIX, SOCK_STREAM, SOL_SOCKET, \
 
 
 ### Defines
-MAIN_PROCESS_KEEPALIVE      =0
-PCSC_LISTENER_UIDS_UPDATE   =1
-SERIAL_LISTENER_UIDS_UPDATE =2
-HID_LISTENER_UIDS_UPDATE    =3
-ADB_LISTENER_UIDS_UPDATE    =4
-PM3_LISTENER_UIDS_UPDATE    =5
-NEW_CLIENT                  =6
-NEW_CLIENT_ACK              =7
-VOID_REQUEST                =8
-VOID_REQUEST_TIMEOUT        =9
-WAITAUTH_REQUEST            =10
-AUTH_RESULT                 =11
-AUTH_OK                     =12
-AUTH_NOK                    =13
-WATCHNBUIDS_REQUEST         =14
-NBUIDS_UPDATE               =15
-WATCHUIDS_REQUEST           =16
-UIDS_UPDATE                 =17
-ADDUSER_REQUEST             =18
-DELUSER_REQUEST             =19
-ENCRUIDS_UPDATE             =20
-ENCRUIDS_UPDATE_ERR_EXISTS  =21
-ENCRUIDS_UPDATE_ERR_NONE    =22
-ENCRUIDS_UPDATE_ERR_TIMEOUT =23
-CLIENT_HANDLER_STOP_REQUEST =24
-CLIENT_HANDLER_STOP         =25
+MAIN_PROCESS_KEEPALIVE         =0
+PCSC_LISTENER_UIDS_UPDATE      =1
+SERIAL_LISTENER_UIDS_UPDATE    =2
+HID_LISTENER_UIDS_UPDATE       =3
+ADB_LISTENER_UIDS_UPDATE       =4
+PM3_LISTENER_UIDS_UPDATE       =5
+CHAMELEON_LISTENER_UIDS_UPDATE =6
+NEW_CLIENT                     =7
+NEW_CLIENT_ACK                 =8
+VOID_REQUEST                   =9
+VOID_REQUEST_TIMEOUT           =10
+WAITAUTH_REQUEST               =11
+AUTH_RESULT                    =12
+AUTH_OK                        =13
+AUTH_NOK                       =14
+WATCHNBUIDS_REQUEST            =15
+NBUIDS_UPDATE                  =16
+WATCHUIDS_REQUEST              =17
+UIDS_UPDATE                    =18
+ADDUSER_REQUEST                =19
+DELUSER_REQUEST                =20
+ENCRUIDS_UPDATE                =21
+ENCRUIDS_UPDATE_ERR_EXISTS     =22
+ENCRUIDS_UPDATE_ERR_NONE       =23
+ENCRUIDS_UPDATE_ERR_TIMEOUT    =24
+CLIENT_HANDLER_STOP_REQUEST    =25
+CLIENT_HANDLER_STOP            =26
 
 
 
@@ -1037,6 +1046,192 @@ def pm3_listener(workdir, main_in_q):
 
 
 
+def chameleon_listener(main_in_q):
+  """Actively read ISO14443A UIDs from a single Chameleon Mini / Tiny device
+  and send the list of active UIDs to the main process. One of the setting slots
+  will be automatically reconfigured as a reader, so don't configure it to use
+  your Chameleon device for something else when you don't use it as a reader
+  with SiRFIDaL
+  """
+
+  # Modules
+  from serial import Serial
+
+  setproctitle("sirfidal_server_chameleon_listener")
+
+  recvbuf=""
+
+  uid_lastseens={}
+
+  chamdev=None
+  send_active_uids_update=True
+
+  while True:
+
+    # Open the reader's device file if it's closed
+    if not chamdev:
+      try:
+        chamdev=Serial(chameleon_dev_file, timeout=0)
+        reader_state = 0
+      except KeyboardInterrupt:
+        return(-1)
+      except:
+        chamdev=None
+
+    if not chamdev:
+      sleep(2)	# Wait a bit to reopen the device
+      continue
+
+    # Determine the command to send to the Chameleon - if any
+    cmd = None
+    if reader_state == 0:	# Query the current slot
+      cmd = "SETTING?"
+    if reader_state == 3:	# Set the current slot
+      cmd = "SETTING={}".format(chameleon_iso14443a_reader_slot)
+    elif reader_state == 5:	# Current slot is configured as reader?
+      cmd = "CONFIG?"
+    elif reader_state == 8:	# Configure current slot as reader
+      cmd = "CONFIG=ISO14443A_READER"
+    elif reader_state == 10:	# Send a read command
+      cmd = "GETUID"
+
+    # Send the command to the Chameleon
+    if cmd:
+
+      cmd = (cmd + "\r").encode("ascii")
+
+      try:
+        sent=chamdev.write(cmd)
+
+      except KeyboardInterrupt:
+        return(-1)
+      except:
+        sent=-1
+
+      if sent!=len(cmd):
+        try:
+          chamdev.close()
+        except:
+          pass
+        chamdev=None
+        sleep(2)	# Wait a bit to reopen the device
+        continue
+
+      reader_state+=1
+
+    # Read UIDs from the reader
+    rlines=[]
+    b=""
+    try:
+
+      if(select([chamdev.fileno()], [], [], chameleon_read_every)[0]):
+
+        try:
+
+          b=os.read(chamdev.fileno(), 256).decode("ascii")
+
+        except KeyboardInterrupt:
+          return(-1)
+        except:
+          b=""
+
+        if not b:
+          try:
+            chamdev.close()
+          except:
+            pass
+          chamdev=None
+          sleep(2)	# Wait a bit to reopen the device
+          continue
+
+        # Split the data into lines
+        for c in b:
+
+          if c=="\n":
+            rlines.append(recvbuf)
+            recvbuf=""
+
+          elif len(recvbuf)<256 and c.isprintable() and c!="\r":
+            recvbuf+=c
+
+    except KeyboardInterrupt:
+      return(-1)
+    except:
+      try:
+        chamdev.close()
+      except:
+        pass
+      chamdev=None
+      sleep(2)	# Wait a bit to reopen the device
+      continue
+
+    tstamp=int(datetime.now().timestamp())
+
+    uid=""
+
+    # Process the lines from the device
+    for l in rlines:
+
+      # Are we waiting for a formatted reply and did we get the correct reply?
+      if (reader_state in (1, 6, 11) and l=="101:OK WITH TEXT") or \
+		(reader_state in (4, 9) and l=="100:OK"):
+        reader_state+=1
+
+      # Are we waiting for a slot number?
+      elif reader_state==2 and re.match("^[0-9]$", l):
+        reader_state = 5 if int(l)==chameleon_iso14443a_reader_slot else 3
+
+      # Are we waiting for a slot configuration string?
+      elif reader_state==7:
+        reader_state = 10 if l=="ISO14443A_READER" else 8
+
+      # Did we get a GETUID timeout?
+      elif reader_state==11 and l=="203:TIMEOUT":
+        reader_state = 10
+
+      # Are we waiting for a UID
+      elif reader_state==12 and re.match("^[0-9a-zA-Z]+$", l):
+        uid=l.upper()
+        reader_state=10
+
+      # Invalid response
+      else:
+        try:
+          chamdev.close()
+        except:
+          pass
+        uid=""
+        chamdev=None
+        sleep(2)	# Wait a bit to reopen the device
+        break
+
+      # If we got a UID, add or update its timestamp in the last-seen list
+      if uid:
+        if uid not in uid_lastseens:
+          send_active_uids_update=True
+        uid_lastseens[uid]=tstamp
+
+    # Remove UID timestamps that are too old from the last-seen list
+    for uid in list(uid_lastseens):
+      if tstamp - uid_lastseens[uid] > chameleon_uid_not_sent_inactive_timeout:
+        del uid_lastseens[uid]
+        send_active_uids_update=True
+
+    # If the active UIDs have changed...
+    if send_active_uids_update:
+
+      # ...send the list to the main process...
+      main_in_q.put([CHAMELEON_LISTENER_UIDS_UPDATE, list(uid_lastseens)])
+      send_active_uids_update=False
+
+    else:
+
+      # ...else send a keepalive message to the main process so it can trigger
+      # timeouts
+      main_in_q.put([MAIN_PROCESS_KEEPALIVE])
+
+
+
 def server(main_in_q, sock):
   """Handle client connections to the server
   """
@@ -1452,6 +1647,10 @@ def main():
   if watch_pm3:
     Process(target=pm3_listener, args=(pm3_client_workdir,main_in_q,)).start()
   
+  # Start the Chameleon listener
+  if watch_chameleon:
+    Process(target=chameleon_listener, args=(main_in_q,)).start()
+
 
 
   # Main process
@@ -1460,6 +1659,7 @@ def main():
   active_hid_uids=[]
   active_adb_uids=[]
   active_pm3_uids=[]
+  active_chameleon_uids=[]
   active_uids=[]
   active_uids_prev=None
   auth_cache={}
@@ -1481,7 +1681,8 @@ def main():
 		msg[0] == SERIAL_LISTENER_UIDS_UPDATE or \
 		msg[0] == HID_LISTENER_UIDS_UPDATE or \
 		msg[0] == ADB_LISTENER_UIDS_UPDATE or \
-		msg[0] == PM3_LISTENER_UIDS_UPDATE:
+		msg[0] == PM3_LISTENER_UIDS_UPDATE or \
+		msg[0] == CHAMELEON_LISTENER_UIDS_UPDATE:
 
         if msg[0] == PCSC_LISTENER_UIDS_UPDATE:
           active_pcsc_uids=msg[1]
@@ -1493,6 +1694,8 @@ def main():
           active_adb_uids=msg[1]
         elif msg[0] == PM3_LISTENER_UIDS_UPDATE:
           active_pm3_uids=msg[1]
+        elif msg[0] == CHAMELEON_LISTENER_UIDS_UPDATE:
+          active_chameleon_uids=msg[1]
 
         # Save the previous list of active UIDs
         active_uids_prev=active_uids
@@ -1500,7 +1703,7 @@ def main():
         # Merge the lists of UIDs from all the listeners
         active_uids=list(set(sorted(active_pcsc_uids + active_serial_uids + \
 				active_hid_uids + active_adb_uids + \
-				active_pm3_uids)))
+				active_pm3_uids + active_chameleon_uids)))
 
         send_active_uids_update=True
 
