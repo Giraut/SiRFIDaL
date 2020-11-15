@@ -120,7 +120,7 @@ As root:
 
     * Use with a Proxmark3 reader:
 
-       - set pm3_client to the path of your Proxmark3 client's executable in
+       - Set pm3_client to the path of your Proxmark3 client's executable in
          sirfidal_server.py
        - Set pm3_reader_dev_file to the device file corresponding to your
          Proxmark3 in sirfidal_server.py
@@ -130,6 +130,18 @@ As root:
          transponders, the reader will be extremely slow. For best performances,
          enable only HF transponders or only LF transponders, but not both.
        - Make sure watch_pm3 is set to True in sirfidal_server.py
+
+    * Use with a ChameleonMini or ChameleonTiny:
+
+       - Set chameleon_dev_file to the device file corresponding to your
+         ChameleonMini or ChameleonTiny in sirfidal_server.py
+       - Set the slot (setting) number you want to reserve for use as a reader
+         in chameleon_iso14443a_reader_slot in sirfidal_server.py. Be sure not
+         to use this slot for something else when you use your Chameleon as a
+         standalone device, as SiRFIDaL will automatically reconfigure it upon
+         connection and clobber your manual configuration.
+       - Make sure watch_chameleon is set to True in sirfidal_server.py
+
 
     * Python3 modules needed:
 
