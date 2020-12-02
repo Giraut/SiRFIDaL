@@ -10,8 +10,9 @@ The script performs the following functions:
 
   - Handle reading RFID / NFC UIDs from different connected readers: several
     PC/SC readers, a single serial reader, a single HID reader, an Android
-    device used as an external NFC reader, a Proxmark3 reader and a
-    Chameleon Mini / Tiny may be watched concurrently
+    device used as an external NFC reader, a Proxmark3 reader, a
+    Chameleon Mini / Tiny and a uFR Nano Online in master mode / HTTP POST
+    mode may be watched concurrently
 
   - Internally maintain a list of of currently active UIDs - that is, the list
     of UIDs of RFID or NFC transponders currently readable by the readers at
@@ -119,12 +120,13 @@ See the parameters below to configure this script.
 
 ### Parameters
 # Types of RFID / NFC readers to watch
-watch_pcsc      =True
+watch_pcsc      =False
 watch_serial    =False
 watch_hid       =False
 watch_adb       =False	#Android device used as an external NFC reader
 watch_pm3       =False	#Proxmark3 reader used as a "dumb" UID reader
 watch_chameleon =False	#Chameleon Mini / Tiny used as an external NFC reader
+watch_ufrno     =True	#uFR Nano Online reader in master mode / HTTP POST mode
 
 # PC/SC parameters
 pcsc_read_every=0.2 #s
@@ -166,6 +168,13 @@ chameleon_dev_file="/dev/ttyACM0"
 chameleon_iso14443a_reader_slot=8
 chameleon_client_comm_timeout=2 #s
 chameleon_uid_not_sent_inactive_timeout=1 #s
+
+# uFR Nano Online (master mode / HTTP POST mode) parameters
+ufrno_read_every=0.2 #s
+ufrno_server_address=""
+ufrno_server_port=30080
+ufrno_enable_beep=False
+ufrno_uid_not_sent_inactive_timeout=1 #s
 
 # Server parameters
 max_server_connections=10
@@ -214,26 +223,27 @@ HID_LISTENER_UIDS_UPDATE       =3
 ADB_LISTENER_UIDS_UPDATE       =4
 PM3_LISTENER_UIDS_UPDATE       =5
 CHAMELEON_LISTENER_UIDS_UPDATE =6
-NEW_CLIENT                     =7
-NEW_CLIENT_ACK                 =8
-VOID_REQUEST                   =9
-VOID_REQUEST_TIMEOUT           =10
-WAITAUTH_REQUEST               =11
-AUTH_RESULT                    =12
-AUTH_OK                        =13
-AUTH_NOK                       =14
-WATCHNBUIDS_REQUEST            =15
-NBUIDS_UPDATE                  =16
-WATCHUIDS_REQUEST              =17
-UIDS_UPDATE                    =18
-ADDUSER_REQUEST                =19
-DELUSER_REQUEST                =20
-ENCRUIDS_UPDATE                =21
-ENCRUIDS_UPDATE_ERR_EXISTS     =22
-ENCRUIDS_UPDATE_ERR_NONE       =23
-ENCRUIDS_UPDATE_ERR_TIMEOUT    =24
-CLIENT_HANDLER_STOP_REQUEST    =25
-CLIENT_HANDLER_STOP            =26
+UFRNO_LISTENER_UIDS_UPDATE     =7
+NEW_CLIENT                     =8
+NEW_CLIENT_ACK                 =9
+VOID_REQUEST                   =10
+VOID_REQUEST_TIMEOUT           =11
+WAITAUTH_REQUEST               =12
+AUTH_RESULT                    =13
+AUTH_OK                        =14
+AUTH_NOK                       =15
+WATCHNBUIDS_REQUEST            =16
+NBUIDS_UPDATE                  =17
+WATCHUIDS_REQUEST              =18
+UIDS_UPDATE                    =19
+ADDUSER_REQUEST                =20
+DELUSER_REQUEST                =21
+ENCRUIDS_UPDATE                =22
+ENCRUIDS_UPDATE_ERR_EXISTS     =23
+ENCRUIDS_UPDATE_ERR_NONE       =24
+ENCRUIDS_UPDATE_ERR_TIMEOUT    =25
+CLIENT_HANDLER_STOP_REQUEST    =26
+CLIENT_HANDLER_STOP            =27
 
 
 
@@ -1232,6 +1242,119 @@ def chameleon_listener(main_in_q):
 
 
 
+def ufr_nano_online_listener(main_in_q):
+  """Run a simplistic web server to receive UIDs in HTTP POST messages from a
+  uFR Nano Online reader configured in master mode with HTTP POST mode
+  enabled, then send the list of active UIDs to the main process.
+  """
+
+  # Modules
+  from http.server import BaseHTTPRequestHandler, HTTPServer
+
+  # Dummy error handler to abuse the exception mechanism to bubble retrieved
+  # UIDs to the main process from the do_POST handler
+  def error_handler(request, client_address):
+    raise
+
+  # Handler class
+  class handler_class(BaseHTTPRequestHandler):
+
+    def do_GET(self):
+      pass
+
+    def do_POST(self):
+
+      # Get the post data from the uFR Nano Online reader that reported it
+      content_length=int(self.headers['Content-Length'])
+      post_data=self.rfile.read(content_length).decode("ascii") \
+			if content_length>0 else ""
+
+      # Does the POST data contain a valid UID?
+      m=re.findall("^.*UID=([0-9A-F:]+).*$", post_data, re.I)
+      uid=m[0].upper().strip(":") if m else ""
+
+      # If we got a UID, reply something. If we don't reply, the uFR Nano
+      # Online will beep 3 times, indicating an error, which is what we want
+      if uid:
+
+        # Strip anything not hexadecimal out of the UID and uppercase it,
+        # so it has a chance to be compatible with UIDs read by the other
+        # listeners
+        uid="".join([c for c in uid.upper() if c in hexdigits])
+
+        # Reply something to the uFR Nano Online reader. If we don't reply,
+        # it will beep 3 times, indicating an error, which is what we want
+        self.send_response(200)
+        self.send_header('Content-type', 'text/plain')
+        self.end_headers()
+
+        # If we send "OK" to the uFR Nano Online, it will beep once. If we
+        # send it nothing, it will stay quiet provided it hasn't beeped
+        # before, otherwise it will continue to beep, annoyingly. If you want
+        # to disable beeping for good, disable it here and restart the reader
+        self.wfile.write(("OK" if ufrno_enable_beep else "").encode('ascii'))
+
+      # Bubble up the UID we received to the main loop
+      raise(RuntimeWarning(uid))
+
+    def log_message(self, format, *args):
+      return
+
+  setproctitle("sirfidal_server_ufr_nano_online_listener")
+
+  # Set up the HTTP server
+  httpd=HTTPServer((ufrno_server_address, ufrno_server_port), handler_class)
+  httpd.timeout=ufrno_read_every
+  httpd.handle_timeout=lambda: (_ for _ in ()).throw(TimeoutError())
+  httpd.handle_error=error_handler
+
+  uid_lastseens={}
+
+  send_active_uids_update=True
+
+  while True:
+
+    # Handle one HTTP request
+    try:
+      httpd.handle_request()
+    except RuntimeWarning as e:
+      uid=str(e)
+    except TimeoutError:
+      uid=None
+    except KeyboardInterrupt:
+      break
+    except:
+      pass
+
+    tstamp=int(datetime.now().timestamp())
+
+    # If we got a UID, add or update its timestamp in the last-seen list
+    if uid:
+      if uid not in uid_lastseens:
+        send_active_uids_update=True
+      uid_lastseens[uid]=tstamp
+
+    # Remove UID timestamps that are too old from the last-seen list
+    for uid in list(uid_lastseens):
+      if tstamp - uid_lastseens[uid] > ufrno_uid_not_sent_inactive_timeout:
+        del uid_lastseens[uid]
+        send_active_uids_update=True
+
+    # If the active UIDs have changed...
+    if send_active_uids_update:
+
+      # ...send the list to the main process...
+      main_in_q.put([UFRNO_LISTENER_UIDS_UPDATE, list(uid_lastseens)])
+      send_active_uids_update=False
+
+    else:
+
+      # ...else send a keepalive message to the main process so it can trigger
+      # timeouts
+      main_in_q.put([MAIN_PROCESS_KEEPALIVE])
+
+
+
 def server(main_in_q, sock):
   """Handle client connections to the server
   """
@@ -1651,6 +1774,10 @@ def main():
   if watch_chameleon:
     Process(target=chameleon_listener, args=(main_in_q,)).start()
 
+  # Start the uFR Nano Online listener
+  if watch_ufrno:
+    Process(target=ufr_nano_online_listener, args=(main_in_q,)).start()
+
 
 
   # Main process
@@ -1660,6 +1787,7 @@ def main():
   active_adb_uids=[]
   active_pm3_uids=[]
   active_chameleon_uids=[]
+  active_ufrno_uids=[]
   active_uids=[]
   active_uids_prev=None
   auth_cache={}
@@ -1677,12 +1805,10 @@ def main():
     if msg[0] != MAIN_PROCESS_KEEPALIVE:
 
       # The message is an update of the active UIDs from one of the listeners
-      if msg[0] == PCSC_LISTENER_UIDS_UPDATE or \
-		msg[0] == SERIAL_LISTENER_UIDS_UPDATE or \
-		msg[0] == HID_LISTENER_UIDS_UPDATE or \
-		msg[0] == ADB_LISTENER_UIDS_UPDATE or \
-		msg[0] == PM3_LISTENER_UIDS_UPDATE or \
-		msg[0] == CHAMELEON_LISTENER_UIDS_UPDATE:
+      if msg[0] in (PCSC_LISTENER_UIDS_UPDATE, SERIAL_LISTENER_UIDS_UPDATE,
+		HID_LISTENER_UIDS_UPDATE, ADB_LISTENER_UIDS_UPDATE,
+		PM3_LISTENER_UIDS_UPDATE, CHAMELEON_LISTENER_UIDS_UPDATE,
+		UFRNO_LISTENER_UIDS_UPDATE):
 
         if msg[0] == PCSC_LISTENER_UIDS_UPDATE:
           active_pcsc_uids=msg[1]
@@ -1696,6 +1822,8 @@ def main():
           active_pm3_uids=msg[1]
         elif msg[0] == CHAMELEON_LISTENER_UIDS_UPDATE:
           active_chameleon_uids=msg[1]
+        elif msg[0] == UFRNO_LISTENER_UIDS_UPDATE:
+          active_ufrno_uids=msg[1]
 
         # Save the previous list of active UIDs
         active_uids_prev=active_uids
@@ -1703,7 +1831,8 @@ def main():
         # Merge the lists of UIDs from all the listeners
         active_uids=list(set(sorted(active_pcsc_uids + active_serial_uids + \
 				active_hid_uids + active_adb_uids + \
-				active_pm3_uids + active_chameleon_uids)))
+				active_pm3_uids + active_chameleon_uids + \
+				active_ufrno_uids)))
 
         send_active_uids_update=True
 
