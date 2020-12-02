@@ -120,13 +120,13 @@ See the parameters below to configure this script.
 
 ### Parameters
 # Types of RFID / NFC readers to watch
-watch_pcsc      =False
+watch_pcsc      =True
 watch_serial    =False
 watch_hid       =False
 watch_adb       =False	#Android device used as an external NFC reader
 watch_pm3       =False	#Proxmark3 reader used as a "dumb" UID reader
 watch_chameleon =False	#Chameleon Mini / Tiny used as an external NFC reader
-watch_ufrno     =True	#uFR Nano Online reader in master mode / HTTP POST mode
+watch_ufrno     =False	#uFR Nano Online reader in master mode / HTTP POST mode
 
 # PC/SC parameters
 pcsc_read_every=0.2 #s
