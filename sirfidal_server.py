@@ -11,8 +11,8 @@ The script performs the following functions:
   - Handle reading RFID / NFC UIDs from different connected readers: several
     PC/SC readers, a single serial reader, a single HID reader, an Android
     device used as an external NFC reader, a Proxmark3 reader, a
-    Chameleon Mini / Tiny and a uFR Nano Online in master mode / HTTP POST
-    mode may be watched concurrently
+    Chameleon Mini / Tiny and a uFR Nano Online in master mode (HTTP POST or
+    UDP broadcast method) may be watched concurrently
 
   - Internally maintain a list of of currently active UIDs - that is, the list
     of UIDs of RFID or NFC transponders currently readable by the readers at
@@ -126,7 +126,7 @@ watch_hid       =False
 watch_adb       =False	#Android device used as an external NFC reader
 watch_pm3       =False	#Proxmark3 reader used as a "dumb" UID reader
 watch_chameleon =False	#Chameleon Mini / Tiny used as an external NFC reader
-watch_ufrno     =False	#uFR Nano Online reader in master mode / HTTP POST mode
+watch_ufrno     =False	#uFR Nano Online reader in master mode
 
 # PC/SC parameters
 pcsc_read_every=0.2 #s
@@ -169,11 +169,19 @@ chameleon_iso14443a_reader_slot=8
 chameleon_client_comm_timeout=2 #s
 chameleon_uid_not_sent_inactive_timeout=1 #s
 
-# uFR Nano Online (master mode / HTTP POST mode) parameters
+# uFR Nano Online in master mode (HTTP POST or UDP broadcast method)
 ufrno_read_every=0.2 #s
-ufrno_server_address=""
-ufrno_server_port=30080
-ufrno_enable_beep=False
+ufrno_serial_number="UN105653"
+ufrno_master_mode_method="udpbcast"		# "httppost" or "udpbcast"
+
+ufrno_udp_server_address=""			# Only for "udbbcast" method
+ufrno_udp_server_port=8880			# Only for "udbbcast" method
+ufrno_udp_data_pattern="80/{sn}/{uid}/0"	# Only for "udbbcast" method
+
+#ufrno_http_server_address=""			# Only for "httppost" method
+#ufrno_http_server_port=30080			# Only for "httppost" method
+#ufrno_http_enable_beep=False			# Only for "httppost" method
+
 ufrno_uid_not_sent_inactive_timeout=1 #s
 
 # Server parameters
@@ -1243,70 +1251,84 @@ def chameleon_listener(main_in_q):
 
 
 def ufr_nano_online_listener(main_in_q):
-  """Run a simplistic web server to receive UIDs in HTTP POST messages from a
-  uFR Nano Online reader configured in master mode with HTTP POST mode
-  enabled, then send the list of active UIDs to the main process.
+  """Receive UIDs from a uFR Nano Online reader configured in master mode, using
+  either the HTTP POST or UDP broadcast method, then send the list of active
+  UIDs to the main process.
   """
-
-  # Modules
-  from http.server import BaseHTTPRequestHandler, HTTPServer
-
-  # Dummy error handler to abuse the exception mechanism to bubble retrieved
-  # UIDs to the main process from the do_POST handler
-  def error_handler(request, client_address):
-    raise
-
-  # Handler class
-  class handler_class(BaseHTTPRequestHandler):
-
-    def do_GET(self):
-      pass
-
-    def do_POST(self):
-
-      # Get the post data from the uFR Nano Online reader that reported it
-      content_length=int(self.headers['Content-Length'])
-      post_data=self.rfile.read(content_length).decode("ascii") \
-			if content_length>0 else ""
-
-      # Does the POST data contain a valid UID?
-      m=re.findall("^.*UID=([0-9A-F:]+).*$", post_data, re.I)
-      uid=m[0].upper().strip(":") if m else ""
-
-      # If we got a UID, reply something. If we don't reply, the uFR Nano
-      # Online will beep 3 times, indicating an error, which is what we want
-      if uid:
-
-        # Strip anything not hexadecimal out of the UID and uppercase it,
-        # so it has a chance to be compatible with UIDs read by the other
-        # listeners
-        uid="".join([c for c in uid.upper() if c in hexdigits])
-
-        # Reply something to the uFR Nano Online reader. If we don't reply,
-        # it will beep 3 times, indicating an error, which is what we want
-        self.send_response(200)
-        self.send_header('Content-type', 'text/plain')
-        self.end_headers()
-
-        # If we send "OK" to the uFR Nano Online, it will beep once. If we
-        # send it nothing, it will stay quiet provided it hasn't beeped
-        # before, otherwise it will continue to beep, annoyingly. If you want
-        # to disable beeping for good, disable it here and restart the reader
-        self.wfile.write(("OK" if ufrno_enable_beep else "").encode('ascii'))
-
-      # Bubble up the UID we received to the main loop
-      raise(RuntimeWarning(uid))
-
-    def log_message(self, format, *args):
-      return
 
   setproctitle("sirfidal_server_ufr_nano_online_listener")
 
-  # Set up the HTTP server
-  httpd=HTTPServer((ufrno_server_address, ufrno_server_port), handler_class)
-  httpd.timeout=ufrno_read_every
-  httpd.handle_timeout=lambda: (_ for _ in ()).throw(TimeoutError())
-  httpd.handle_error=error_handler
+  do_http_post = False
+  do_udp_bcast = False
+
+  # Receive UIDs using the HTTP POST method
+  if ufrno_master_mode_method=="httppost":
+
+    # Modules
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    # Dummy error handler to abuse the exception mechanism to bubble retrieved
+    # UIDs to the main process from the do_POST handler
+    def http_error_handler(request, client_address):
+      raise
+
+    # HTTP Handler class
+    class http_handler_class(BaseHTTPRequestHandler):
+
+      def do_GET(self):
+        pass
+
+      def do_POST(self):
+
+        # Get the post data from the uFR Nano Online reader that reported it
+        content_length=int(self.headers['Content-Length'])
+        post_data=self.rfile.read(content_length).decode("ascii") \
+			if content_length>0 else ""
+
+        # Does the POST data contain a valid UID?
+        if re.search("SN={}".format(ufrno_serial_number), post_data):
+          m=re.findall("^.*UID=([0-9A-F:]+).*$", post_data)
+          uid=m[0].upper().strip(":") if m else ""
+        else:
+          uid=""
+
+        # If we got a UID, reply something. If we don't reply, the uFR Nano
+        # Online will beep 3 times, indicating an error, which is what we want
+        if uid:
+
+          # Reply something to the uFR Nano Online reader. If we don't reply,
+          # it will beep 3 times, indicating an error, which is what we want
+          self.send_response(200)
+          self.send_header('Content-type', 'text/plain')
+          self.end_headers()
+
+          # If we send "OK" to the uFR Nano Online, it will beep once. If we
+          # send it nothing, it will stay quiet provided it hasn't beeped
+          # before, otherwise it will continue to beep, annoyingly. If you want
+          # to disable beeping for good, disable it here and restart the reader
+          self.wfile.write(("OK" if ufrno_http_enable_beep \
+				else "").encode('ascii'))
+
+        # Bubble up the UID we received to the main loop
+        raise(RuntimeWarning(uid))
+
+      def log_message(self, format, *args):
+        return
+
+    httpd=None
+    do_http_post = True
+
+  # Receive UIDs using the UDP broadcast method
+  elif ufrno_master_mode_method=="udpbcast":
+
+    # Modules
+    from socket import socket, AF_INET, SOCK_DGRAM, timeout
+
+    uid_extraction_pattern="^"+ufrno_udp_data_pattern.format(
+				sn=ufrno_serial_number,
+				uid="([0-9a-zA-Z:]+)")+"$"
+    sock=None
+    do_udp_bcast=True
 
   uid_lastseens={}
 
@@ -1314,19 +1336,79 @@ def ufr_nano_online_listener(main_in_q):
 
   while True:
 
-    # Handle one HTTP request
-    try:
-      httpd.handle_request()
-    except RuntimeWarning as e:
-      uid=str(e)
-    except TimeoutError:
-      uid=None
-    except KeyboardInterrupt:
-      break
-    except:
-      pass
+    uid=""
+
+    if do_http_post:
+
+      # Set up the HTTP server if needed
+      if httpd==None:
+
+        try:
+          httpd=HTTPServer((ufrno_http_server_address, ufrno_http_server_port),
+			http_handler_class)
+          httpd.timeout=ufrno_read_every
+          httpd.handle_timeout=lambda: (_ for _ in ()).throw(TimeoutError())
+          httpd.handle_error=http_error_handler
+        except:
+          httpd=None
+          sleep(2)	# Wait a bit to try setting up the server again
+          continue
+
+      # Handle one HTTP request
+      try:
+        httpd.handle_request()
+      except RuntimeWarning as e:
+        uid=str(e)
+      except TimeoutError:
+        uid=""
+      except KeyboardInterrupt:
+        httpd.server_close()
+        break
+      except:
+        httpd.server_close()
+        httpd=None
+        sleep(2)	# Wait a bit to try setting up the server again
+        continue
+
+    elif do_udp_bcast:
+
+      # Set up the UDP socket if needed
+      if sock==None:
+
+        try:
+          sock=socket(AF_INET, SOCK_DGRAM)
+          sock.settimeout(ufrno_read_every)
+          sock.bind((ufrno_udp_server_address, ufrno_udp_server_port))
+        except:
+          sock=None
+          sleep(2)	# Wait a bit to try setting up the UDP socket again
+          continue
+
+      # Get one UDP datagram
+      try:
+        udp_data=sock.recvfrom(1024)[0].decode("ascii")
+
+        # Extract the UID
+        m=re.findall(uid_extraction_pattern, udp_data)
+        uid=m[0].upper().strip(":") if m else ""
+
+      except timeout:
+        uid = ""
+      except KeyboardInterrupt:
+        sock.close()
+        break
+      except:
+        sock.close()
+        sock=None
+        sleep(2)	# Wait a bit to try setting up the UDP socket again
+        continue
 
     tstamp=int(datetime.now().timestamp())
+
+    # Strip anything not hexadecimal out of the UID and uppercase it,
+    # so it has a chance to be compatible with UIDs read by the other
+    # listeners
+    uid="".join([c for c in uid.upper() if c in hexdigits])
 
     # If we got a UID, add or update its timestamp in the last-seen list
     if uid:

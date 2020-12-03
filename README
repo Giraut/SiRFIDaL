@@ -142,25 +142,38 @@ As root:
          connection and clobber your manual configuration.
        - Make sure watch_chameleon is set to True in sirfidal_server.py
 
-    * Use with a uFR Nano Online in master mode with HTTP POST mode enabled:
+    * Use with a uFR Nano Online in master mode (HTTP POST or UDB broadcast):
 
        - Configure your uFR Nano Online to connect to the same Wifi router
          the computer the SiRFIDaL server is running on is connected to. See
          https://www.d-logic.net/knowledge-base/µfr-nano-online-reader-settings/
 
-         WARNING: because the uFR Nano Online sends UIDs in plaintext over HTTP,
-                  it relies entirely on the Wifi connection's encryption for
+         WARNING: because the uFR Nano Online sends UIDs in plaintext, it
+                  relies entirely on the Wifi connection's encryption for
                   security against network sniffers. Don't use it to log in
                   over an insecure network or across the internet!
 
-       - Set the address / port the SiRFIDaL server should listen on for
-         incoming HTTP connections in sirfidal_server.py. Unless you want the
-         server to listen only on a particular network interface, the address
-         may be left blank.
-       - Set ufrno_enable_beep to True in sirfidal_server.py if you want the
-         uFR Nano Online to beep after reading a UID (with some delay).
-         Be aware that due to a bug in the reader's firmware, if you disable
-         this flag later, the reader will continue beeping until you reboot it.
+       - To use the HTTP POST method:
+          - Set ufrno_master_mode_method to httppost in sirfidal_server.py
+          - Set the address / port the SiRFIDaL server should listen on for
+            incoming HTTP connections in sirfidal_server.py. Unless you want the
+            server to listen only on a particular network interface, the address
+            may be left blank.
+          - Set ufrno_enable_beep to True in sirfidal_server.py if you want the
+            uFR Nano Online to beep after reading a UID (with some delay).
+            Be aware that due to a bug in the reader's firmware, if you disable
+            this flag later, the reader will continue beeping until you
+            reboot it.
+
+       -To use the UDP broadcast method
+          - Set ufrno_master_mode_method to udpbcast in sirfidal_server.py
+          - Set the broadcast address / port the SiRFIDaL server should listen
+            on for broadcast UDP datagrams in sirfidal_server.py. Unless you
+            want the server to listen only on a particular broadcast network
+            interface, the address may be left blank.
+          - Set ufrno_udp_data_pattern to match the pattern defined in the
+            reader's settings.
+      
        - Make sure watch_ufrno is set to True in sirfidal_server.py
 
 
