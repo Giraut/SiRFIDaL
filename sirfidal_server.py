@@ -172,6 +172,9 @@ chameleon_uid_not_sent_inactive_timeout=1 #s
 # uFR or uFR Nano Online in slave mode
 ufr_read_every=0.2 #s
 ufr_device="tcp://ufr:8881"
+ufr_no_rgb1=(32, 24, 0)		# For Nano Online, LED1 color
+ufr_no_rgb2_card_off=(24, 0, 0)	# For Nano Online, LED2 color if no card present
+ufr_no_rgb2_card_on=(0, 24, 0)	# For Nano Online, LED2 color if card present
 ufr_device_check_every=10 #s
 
 # Server parameters
@@ -290,14 +293,14 @@ def pcsc_listener(main_in_q):
 
     # Wait on a PC/SC card's status change
     readers=[]
-  
+
     if not hcontext:
       r, hcontext = sc.SCardEstablishContext(sc.SCARD_SCOPE_USER)
 
       if r!=sc.SCARD_S_SUCCESS:
         del(hcontext)
         hcontext=None
-  
+
     if hcontext:
       _, readers = sc.SCardListReaders(hcontext, [])
 
@@ -514,7 +517,7 @@ def hid_listener(main_in_q):
   """
 
   # Modules
-  from evdev import InputDevice, categorize, ecodes  
+  from evdev import InputDevice, categorize, ecodes
 
   setproctitle("sirfidal_server_hid_listener")
 
@@ -525,20 +528,20 @@ def hid_listener(main_in_q):
   SC_ENTER=28
   KEYUP=0
   KEYDOWN=1
-  
+
   scancodes_us_kbd={
       2: ["1", "!"],  3: ["2", "@"],  4: ["3", "#"],  5: ["4", "$"],
       6: ["5", "%"],  7: ["6", "^"],  8: ["7", "&"],  9: ["8", "*"],
-     10: ["9", "("], 11: ["0", ")"], 12: ["-", "_"], 13: ["=", "+"], 
-     16: ["q", "Q"], 17: ["w", "W"], 18: ["e", "E"], 19: ["r", "R"], 
-     20: ["t", "T"], 21: ["y", "Y"], 22: ["u", "U"], 23: ["i", "I"], 
-     24: ["o", "O"], 25: ["p", "P"], 26: ["[", "{"], 27: ["]", "}"], 
-     30: ["a", "A"], 31: ["s", "S"], 32: ["d", "D"], 33: ["f", "F"], 
-     34: ["g", "G"], 35: ["h", "H"], 36: ["j", "J"], 37: ["k", "K"], 
-     38: ["l", "L"], 39: [";", ":"], 40: ["'", '"'], 41: ["`", "~"], 
-     43: ["\\","|"], 44: ["z", "Z"], 45: ["x", "X"], 46: ["c", "C"], 
-     47: ["v", "V"], 48: ["b", "B"], 49: ["n", "N"], 50: ["m", "M"], 
-     51: [",", "<"], 52: [".", ">"], 53: ["/", "?"], 57: [" ", " "], 
+     10: ["9", "("], 11: ["0", ")"], 12: ["-", "_"], 13: ["=", "+"],
+     16: ["q", "Q"], 17: ["w", "W"], 18: ["e", "E"], 19: ["r", "R"],
+     20: ["t", "T"], 21: ["y", "Y"], 22: ["u", "U"], 23: ["i", "I"],
+     24: ["o", "O"], 25: ["p", "P"], 26: ["[", "{"], 27: ["]", "}"],
+     30: ["a", "A"], 31: ["s", "S"], 32: ["d", "D"], 33: ["f", "F"],
+     34: ["g", "G"], 35: ["h", "H"], 36: ["j", "J"], 37: ["k", "K"],
+     38: ["l", "L"], 39: [";", ":"], 40: ["'", '"'], 41: ["`", "~"],
+     43: ["\\","|"], 44: ["z", "Z"], 45: ["x", "X"], 46: ["c", "C"],
+     47: ["v", "V"], 48: ["b", "B"], 49: ["n", "N"], 50: ["m", "M"],
+     51: [",", "<"], 52: [".", ">"], 53: ["/", "?"], 57: [" ", " "],
   }
 
   recvbuf=""
@@ -1261,16 +1264,13 @@ def ufr_listener(main_in_q):
 
     now = datetime.now().timestamp()
 
+    # Close the uFR device if needed
     if close_device:
-      try:
-        ufr.close()
-      except:
-        pass
+      ufr.close()
       ufr=None
       close_device = False
       sleep(2)	# Wait a bit to reopen the device
 
-    # Close the uFR device if needed
     # Open the uFR device if needed
     if not ufr:
       set_async_at_tstamp = 0
@@ -1279,6 +1279,19 @@ def ufr_listener(main_in_q):
       except:
         sleep(2)	# Wait a bit to reopen the device
         continue
+
+      # Try to set the red LED on. Fail silently
+      try:
+        ufr.red_light_control(True)
+      except:
+        pass
+
+      # Try to set the Nano Online LEDs if they're not None. Fail silently
+      if ufr_no_rgb1 and ufr_no_rgb2_card_off:
+        try:
+          ufr.esp_set_display_data(ufr_no_rgb1, ufr_no_rgb2_card_off, 0)
+        except:
+          pass
 
     # If we're due to set - or reset - asynchronous ID sending mode, do so
     if now > set_async_at_tstamp:
@@ -1314,9 +1327,26 @@ def ufr_listener(main_in_q):
       close_device = True
       continue
 
-    # Send the list to the main process if the uid has changed or disappeared
+    # Did the UID change or disappear?
     if uid != last_uid:
+
+      # Send the list to the main process
       main_in_q.put([UFR_LISTENER_UIDS_UPDATE, [uid] if uid else []])
+
+      # Try to set the red LED on if no card is present, off if a card is
+      # present. Fail silently
+      try:
+        ufr.red_light_control(not uid)
+      except:
+        pass
+
+      # Try to set the Nano Online LED colors if they're not None. Fail silently
+      rgb2 = ufr_no_rgb2_card_on if uid else ufr_no_rgb2_card_off
+      if ufr_no_rgb1 and rgb2:
+        try:
+          ufr.esp_set_display_data(ufr_no_rgb1, rgb2, 0)
+        except:
+          pass
 
 
 
@@ -1369,7 +1399,7 @@ def server(main_in_q, sock):
 		  chandler_out_p,
 		  conn
 		)).start()
-    
+
 
 
 def client_handler(pid, uid, gid, pw_name,
@@ -1403,7 +1433,7 @@ def client_handler(pid, uid, gid, pw_name,
 
   # Inform the main process that we have a new client
   main_in_q.put([NEW_CLIENT, [pid, pw_name, main_out_p]])
-  new_client_ack=False 
+  new_client_ack=False
 
   while True:
 
@@ -1541,7 +1571,7 @@ def client_handler(pid, uid, gid, pw_name,
 
           elif len(crecvbuf)<256 and c.isprintable():
             crecvbuf+=c
- 
+
         # Process client requests
         for l in clines:
 
@@ -1722,19 +1752,19 @@ def main():
   # Start the serial listener
   if watch_serial:
     Process(target=serial_listener, args=(main_in_q,)).start()
-  
+
   # Start the HID listener
   if watch_hid:
     Process(target=hid_listener, args=(main_in_q,)).start()
-  
+
   # Start the ADB listener
   if watch_adb:
     Process(target=adb_listener, args=(main_in_q,)).start()
-  
+
   # Start the Proxmark3 listener
   if watch_pm3:
     Process(target=pm3_listener, args=(pm3_client_workdir,main_in_q,)).start()
-  
+
   # Start the Chameleon listener
   if watch_chameleon:
     Process(target=chameleon_listener, args=(main_in_q,)).start()
@@ -1761,7 +1791,7 @@ def main():
   active_clients={}
 
   while True:
-    
+
     # Get a message from another process
     msg=main_in_q.get()
     msg_tstamp=datetime.now().timestamp()
@@ -1999,7 +2029,7 @@ def main():
           active_clients[cpid].expires=msg_tstamp + \
 			client_force_close_socket_timeout
 
-          
+
 
       # If an authentication request has timed out or the authentication is
       # successful, notify the client handler and replace the request with
@@ -2040,7 +2070,7 @@ def main():
     if msg[0] != MAIN_PROCESS_KEEPALIVE:
       send_active_uids_update=False
 
-      
+
 
 ### Jump to the main routine
 if __name__ == "__main__":
