@@ -142,37 +142,18 @@ As root:
          connection and clobber your manual configuration.
        - Make sure watch_chameleon is set to True in sirfidal_server.py
 
-    * Use with a uFR Nano Online in master mode (HTTP POST or UDB broadcast):
+    * Use with a uFR or uFR Nano Online reader in slave mode:
 
-       - Configure your uFR Nano Online to connect to the same Wifi router
-         the computer the SiRFIDaL server is running on is connected to. See
-         https://www.d-logic.net/knowledge-base/µfr-nano-online-reader-settings/
+       - If you use a serial uFR reader, configure set ufr_device to
+         serial://<serial device file>:<baudrate> in sirfidal_server.py.
 
-         WARNING: because the uFR Nano Online sends UIDs in plaintext, it
-                  relies entirely on the Wifi connection's encryption for
-                  security against network sniffers. Don't use it to log in
-                  over an insecure network or across the internet!
+       - If you use a uFR Nano Online reader, configure the reader in slave
+         mode to use UDP, TCP or websocket, then set ufr_device accordingly in
+         sirfidal_server.py:
 
-       - To use the HTTP POST method:
-          - Set ufrno_master_mode_method to httppost in sirfidal_server.py
-          - Set the address / port the SiRFIDaL server should listen on for
-            incoming HTTP connections in sirfidal_server.py. Unless you want the
-            server to listen only on a particular network interface, the address
-            may be left blank.
-          - Set ufrno_enable_beep to True in sirfidal_server.py if you want the
-            uFR Nano Online to beep after reading a UID (with some delay).
-            Be aware that due to a bug in the reader's firmware, if you disable
-            this flag later, the reader will continue beeping until you
-            reboot it.
-
-       -To use the UDP broadcast method
-          - Set ufrno_master_mode_method to udpbcast in sirfidal_server.py
-          - Set the broadcast address / port the SiRFIDaL server should listen
-            on for broadcast UDP datagrams in sirfidal_server.py. Unless you
-            want the server to listen only on a particular broadcast network
-            interface, the address may be left blank.
-          - Set ufrno_udp_data_pattern to match the pattern defined in the
-            reader's settings.
+         udp://<ufr reader host>:<uart port>
+         tcp://<ufr reader host>:<uart port>
+         ws://<ufr reader host>:<uart port>
       
        - Make sure watch_ufrno is set to True in sirfidal_server.py
 
@@ -187,6 +168,8 @@ As root:
       apt-get install python3-cryptography  # Needed by sirfidal_autotype
       apt-get install python3-xdo           # Needed by sirfidal_autotype and
                                             # sirfidal_auto_send_enter_at_login
+      https://github.com/Giraut/pyuFR       # Needed to use a uFR reader
+         -> Copy pyufr.py in /usr/lib/python3/dist-packages/
 
     * Optional external programs
 
@@ -304,10 +287,10 @@ That's because they're made to emulate keyboards, to automatically enter UIDs
 in a word processor or a spreadsheet. Obviously you don't want the reader to
 fill up your document with identical UIDs.
 
-Likewise, the ChameleonMini, ChameleonTiny, the uFR Nano Online and many serial
-readers are one-shot readers and send the UIDs they read only once until the
-transponder is removed from the field and a new one is read. Those readers are
-made primarily for single-shot rather than continuous authentication.
+Likewise, the ChameleonMini, ChameleonTiny and many serial readers are one-shot
+readers and send the UIDs they read only once until the transponder is removed
+from the field and a new one is read. Those readers are made primarily for
+single-shot rather than continuous authentication.
 
 As a result, with those readers, it's impossible to detect the presence of a
 transponder continuously. SiRFIDaL emulates a repeating device by pretending
