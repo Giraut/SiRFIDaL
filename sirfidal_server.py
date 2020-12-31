@@ -126,7 +126,7 @@ watch_hid       =False
 watch_adb       =False	#Android device used as an external NFC reader
 watch_pm3       =False	#Proxmark3 reader used as a "dumb" UID reader
 watch_chameleon =False	#Chameleon Mini / Tiny used as an external NFC reader
-watch_ufr       =True	#uFR or uFR Nano Online reader in slave mode
+watch_ufr       =False	#uFR or uFR Nano Online reader in slave mode
 
 # PC/SC parameters
 pcsc_read_every=0.2 #s
