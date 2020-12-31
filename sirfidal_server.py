@@ -126,7 +126,7 @@ watch_hid       =False
 watch_adb       =False	#Android device used as an external NFC reader
 watch_pm3       =False	#Proxmark3 reader used as a "dumb" UID reader
 watch_chameleon =False	#Chameleon Mini / Tiny used as an external NFC reader
-watch_ufr       =False	#uFR or uFR Nano Online reader in slave mode
+watch_ufr       =True	#uFR or uFR Nano Online reader in slave mode
 
 # PC/SC parameters
 pcsc_read_every=0.2 #s
@@ -172,6 +172,7 @@ chameleon_uid_not_sent_inactive_timeout=1 #s
 # uFR or uFR Nano Online in slave mode
 ufr_read_every=0.2 #s
 ufr_device="tcp://ufr:8881"
+ufr_device_check_every=10 #s
 
 # Server parameters
 max_server_connections=10
@@ -1254,22 +1255,45 @@ def ufr_listener(main_in_q):
   ufr=None
   uid=None
 
+  close_device = False
+
   while True:
 
-    if not ufr:
+    now = datetime.now().timestamp()
 
-      # Open the uFR device and enable asynchronous ID sending
+    if close_device:
+      try:
+        ufr.close()
+      except:
+        pass
+      ufr=None
+      close_device = False
+      sleep(2)	# Wait a bit to reopen the device
+
+    # Close the uFR device if needed
+    # Open the uFR device if needed
+    if not ufr:
+      set_async_at_tstamp = 0
       try:
         ufr=uFR.open(ufr_device, restore_on_close = True)
-        ufr.set_card_id_send_conf(True)
       except:
         sleep(2)	# Wait a bit to reopen the device
+        continue
+
+    # If we're due to set - or reset - asynchronous ID sending mode, do so
+    if now > set_async_at_tstamp:
+      try:
+        ufr.set_card_id_send_conf(True)
+        set_async_at_tstamp = now + ufr_device_check_every
+      except:
+        close_device = True
         continue
 
     # Get a UID from the uFR reader
     last_uid=uid
     try:
       uid=ufr.get_async_id(ufr_read_every)
+      set_async_at_tstamp = now + ufr_device_check_every
       if uid:
         uid=uid.replace(":", "").upper()
 
@@ -1280,13 +1304,14 @@ def ufr_listener(main_in_q):
       continue
 
     except KeyboardInterrupt:
-      ufr.close()
+      try:
+        ufr.close()
+      except:
+        pass
       break
 
     except:
-      ufr.close()
-      ufr=None
-      sleep(2)	# Wait a bit to reopen the device
+      close_device = True
       continue
 
     # Send the list to the main process if the uid has changed or disappeared
