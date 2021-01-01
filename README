@@ -154,6 +154,10 @@ As root:
          udp://<ufr reader host>:<uart port>
          tcp://<ufr reader host>:<uart port>
          ws://<ufr reader host>:<uart port>
+
+       - If your uFR device doesn't support asynchronous ID sending mode (e.g.
+         uFR Nano Online in HTTP mode or through the serial port), set
+         ufr_polled_mode to True in sirfidal_server.py
       
        - Make sure watch_ufrno is set to True in sirfidal_server.py
 

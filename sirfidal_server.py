@@ -172,6 +172,7 @@ chameleon_uid_not_sent_inactive_timeout=1 #s
 # uFR or uFR Nano Online in slave mode
 ufr_read_every=0.2 #s
 ufr_device="tcp://ufr:8881"
+ufr_polled_mode=False		# Polled or asynchronous ID sending mode
 ufr_debounce_delay=0.2 #s
 ufr_no_rgb1=(32, 24, 0)		# For Nano Online, LED1 color
 ufr_no_rgb2_card_off=(24, 0, 0)	# For Nano Online, LED2 color if no card present
@@ -1257,12 +1258,13 @@ def ufr_listener(main_in_q):
   uFR=pyufr.uFR()
 
   ufr=None
-  uid=None
+  uid=""
 
   close_device = False
 
   uid_off_report_tstamp=0
   last_sent_uid=None
+  send_update=True
 
   while True:
 
@@ -1280,8 +1282,10 @@ def ufr_listener(main_in_q):
 
       try:
         ufr=uFR.open(ufr_device, restore_on_close = True)
-        ufr.set_card_id_send_conf(True)
-        recheck_conn_at_tstamp=now + ufr_device_check_every
+        if not ufr_polled_mode:
+          ufr.set_card_id_send_conf(True)
+          recheck_conn_at_tstamp=now + ufr_device_check_every
+
       except:
         sleep(2)	# Wait a bit to reopen the device
         continue
@@ -1309,7 +1313,7 @@ def ufr_listener(main_in_q):
       set_leds = False
 
     # Should we recheck the connection with the reader?
-    if now > recheck_conn_at_tstamp:
+    if not ufr_polled_mode and now > recheck_conn_at_tstamp:
       try:
         ufr.get_firmware_version()
         recheck_conn_at_tstamp=now + ufr_device_check_every
@@ -1317,16 +1321,23 @@ def ufr_listener(main_in_q):
         close_device=True
         continue
 
-    # Get a UID from the uFR reader
+    # Get a UID from the uFR reader using the polling of asynchronous method
     last_uid=uid
     try:
-      uid=ufr.get_async_id(ufr_read_every)
-      recheck_conn_at_tstamp=now + ufr_device_check_every
+      if ufr_polled_mode:
+        _, uid = ufr.get_card_id_ex()
+      else:
+        uid=ufr.get_async_id(ufr_read_every)
+        recheck_conn_at_tstamp=now + ufr_device_check_every
 
     except TimeoutError:
-      # Send a keepalive message to the main process so it can trigger
-      # timeouts
-      main_in_q.put([MAIN_PROCESS_KEEPALIVE])
+      if ufr_polled_mode:
+        close_device=True
+        continue
+      else:
+        # Send a keepalive message to the main process so it can trigger
+        # timeouts
+        main_in_q.put([MAIN_PROCESS_KEEPALIVE])
 
     except KeyboardInterrupt:
       try:
@@ -1342,19 +1353,24 @@ def ufr_listener(main_in_q):
     # Did the UID change, or go off long enough for us to take action?
     if uid!=last_uid or (not uid and uid_off_report_tstamp):
 
-      # Prevent the UID-off event from being reported too fast
+      send_update=True
+
+      # Prevent UID-off events from being reported too fast
       if not uid:
         if not uid_off_report_tstamp:
           uid_off_report_tstamp=now + ufr_debounce_delay
-          continue
+          send_update=False
         elif now < uid_off_report_tstamp:
-          continue
+          send_update=False
         else:
           uid_off_report_tstamp=0
       else:
         uid_off_report_tstamp=0
         if uid==last_sent_uid:
-          continue
+          send_update=False
+
+    # Should we send an updated list of UIDs to the main process?
+    if send_update:
 
       # Send the list to the main process
       main_in_q.put([UFR_LISTENER_UIDS_UPDATE, [uid.upper()] if uid else []])
@@ -1364,6 +1380,19 @@ def ufr_listener(main_in_q):
       red_led_state=not uid
       ufr_no_rgb2=ufr_no_rgb2_card_on if uid else ufr_no_rgb2_card_off
       set_leds=True
+
+      send_update=False
+
+    # If nothing has changed, send a keepalive message to the main process in
+    # polled mode, so it can trigger timeouts
+    elif ufr_polled_mode:
+      main_in_q.put([MAIN_PROCESS_KEEPALIVE])
+
+    # In polled mode, wait a bit to prevent polling too fast
+    if ufr_polled_mode:
+      remaining_wait=ufr_read_every - datetime.now().timestamp() + now
+      if remaining_wait > 0:
+        sleep(remaining_wait)
 
 
 
