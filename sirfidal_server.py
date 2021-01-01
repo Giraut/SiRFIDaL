@@ -1320,8 +1320,6 @@ def ufr_listener(main_in_q):
     try:
       uid=ufr.get_async_id(ufr_read_every)
       recheck_conn_at_tstamp = now + ufr_device_check_every
-      if uid:
-        uid=uid.replace(":", "").upper()
 
     except TimeoutError:
       # Send a keepalive message to the main process so it can trigger
@@ -1344,7 +1342,7 @@ def ufr_listener(main_in_q):
     if uid != last_uid:
 
       # Send the list to the main process
-      main_in_q.put([UFR_LISTENER_UIDS_UPDATE, [uid] if uid else []])
+      main_in_q.put([UFR_LISTENER_UIDS_UPDATE, [uid.upper()] if uid else []])
 
       # Update the state of the LEDs
       red_led_state = not uid
