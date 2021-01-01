@@ -172,6 +172,7 @@ chameleon_uid_not_sent_inactive_timeout=1 #s
 # uFR or uFR Nano Online in slave mode
 ufr_read_every=0.2 #s
 ufr_device="tcp://ufr:8881"
+ufr_debounce_delay=0.2 #s
 ufr_no_rgb1=(32, 24, 0)		# For Nano Online, LED1 color
 ufr_no_rgb2_card_off=(24, 0, 0)	# For Nano Online, LED2 color if no card present
 ufr_no_rgb2_card_on=(0, 24, 0)	# For Nano Online, LED2 color if card present
@@ -1260,15 +1261,18 @@ def ufr_listener(main_in_q):
 
   close_device = False
 
+  uid_off_report_tstamp=0
+  last_sent_uid=None
+
   while True:
 
-    now = datetime.now().timestamp()
+    now=datetime.now().timestamp()
 
     # Close the uFR device if needed
     if close_device:
       ufr.close()
       ufr=None
-      close_device = False
+      close_device=False
       sleep(2)	# Wait a bit to reopen the device
 
     # Open the uFR device and set asynchronous ID sending mode if needed
@@ -1277,14 +1281,14 @@ def ufr_listener(main_in_q):
       try:
         ufr=uFR.open(ufr_device, restore_on_close = True)
         ufr.set_card_id_send_conf(True)
-        recheck_conn_at_tstamp = now + ufr_device_check_every
+        recheck_conn_at_tstamp=now + ufr_device_check_every
       except:
         sleep(2)	# Wait a bit to reopen the device
         continue
 
-      red_led_state = False
-      ufr_no_rgb2 = ufr_no_rgb2_card_off
-      set_leds = True
+      red_led_state=False
+      ufr_no_rgb2=ufr_no_rgb2_card_off
+      set_leds=True
 
 
 
@@ -1310,22 +1314,21 @@ def ufr_listener(main_in_q):
     if now > recheck_conn_at_tstamp:
       try:
         ufr.get_firmware_version()
-        recheck_conn_at_tstamp = now + ufr_device_check_every
+        recheck_conn_at_tstamp=now + ufr_device_check_every
       except:
-        close_device = True
+        close_device=True
         continue
 
     # Get a UID from the uFR reader
     last_uid=uid
     try:
       uid=ufr.get_async_id(ufr_read_every)
-      recheck_conn_at_tstamp = now + ufr_device_check_every
+      recheck_conn_at_tstamp=now + ufr_device_check_every
 
     except TimeoutError:
       # Send a keepalive message to the main process so it can trigger
       # timeouts
       main_in_q.put([MAIN_PROCESS_KEEPALIVE])
-      continue
 
     except KeyboardInterrupt:
       try:
@@ -1335,19 +1338,34 @@ def ufr_listener(main_in_q):
       break
 
     except:
-      close_device = True
+      close_device=True
       continue
 
-    # Did the UID change?
-    if uid != last_uid:
+    # Did the UID change, or go off long enough for us to take action?
+    if uid!=last_uid or (not uid and uid_off_report_tstamp):
+
+      # Prevent the UID-off event from being reported too fast
+      if not uid:
+        if not uid_off_report_tstamp:
+          uid_off_report_tstamp=now + ufr_debounce_delay
+          continue
+        elif now < uid_off_report_tstamp:
+          continue
+        else:
+          uid_off_report_tstamp=0
+      else:
+        uid_off_report_tstamp=0
+        if uid==last_sent_uid:
+          continue
 
       # Send the list to the main process
       main_in_q.put([UFR_LISTENER_UIDS_UPDATE, [uid.upper()] if uid else []])
+      last_sent_uid=uid
 
       # Update the state of the LEDs
-      red_led_state = not uid
-      ufr_no_rgb2 = ufr_no_rgb2_card_on if uid else ufr_no_rgb2_card_off
-      set_leds = True
+      red_led_state=not uid
+      ufr_no_rgb2=ufr_no_rgb2_card_on if uid else ufr_no_rgb2_card_off
+      set_leds=True
 
 
 
