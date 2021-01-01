@@ -1286,11 +1286,9 @@ def ufr_listener(main_in_q):
         sleep(2)	# Wait a bit to reopen the device
         continue
 
-      red_led_state=False
+      red_led_state=True
       ufr_no_rgb2=ufr_no_rgb2_card_off
       set_leds=True
-
-
 
     # Should we set the LEDs?
     if set_leds:
