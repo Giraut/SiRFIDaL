@@ -126,7 +126,7 @@ watch_hid       =False
 watch_adb       =False	#Android device used as an external NFC reader
 watch_pm3       =False	#Proxmark3 reader used as a "dumb" UID reader
 watch_chameleon =False	#Chameleon Mini / Tiny used as an external NFC reader
-watch_ufr       =False	#uFR or uFR Nano Online reader in slave mode
+watch_ufr       =True	#uFR or uFR Nano Online reader in slave mode
 
 # PC/SC parameters
 pcsc_read_every=0.2 #s
@@ -1271,33 +1271,46 @@ def ufr_listener(main_in_q):
       close_device = False
       sleep(2)	# Wait a bit to reopen the device
 
-    # Open the uFR device if needed
+    # Open the uFR device and set asynchronous ID sending mode if needed
     if not ufr:
-      set_async_at_tstamp = 0
+
       try:
         ufr=uFR.open(ufr_device, restore_on_close = True)
+        ufr.set_card_id_send_conf(True)
+        recheck_conn_at_tstamp = now + ufr_device_check_every
       except:
         sleep(2)	# Wait a bit to reopen the device
         continue
 
+      red_led_state = False
+      ufr_no_rgb2 = ufr_no_rgb2_card_off
+      set_leds = True
+
+
+
+    # Should we set the LEDs?
+    if set_leds:
+
       # Try to set the red LED on. Fail silently
       try:
-        ufr.red_light_control(True)
+        ufr.red_light_control(red_led_state)
       except:
         pass
 
-      # Try to set the Nano Online LEDs if they're not None. Fail silently
-      if ufr_no_rgb1 and ufr_no_rgb2_card_off:
+      # Try to set the Nano Online LEDs if we have RGB values. Fail silently
+      if ufr_no_rgb1 and ufr_no_rgb2:
         try:
-          ufr.esp_set_display_data(ufr_no_rgb1, ufr_no_rgb2_card_off, 0)
+          ufr.esp_set_display_data(ufr_no_rgb1, ufr_no_rgb2, 0)
         except:
           pass
 
-    # If we're due to set - or reset - asynchronous ID sending mode, do so
-    if now > set_async_at_tstamp:
+      set_leds = False
+
+    # Should we recheck the connection with the reader?
+    if now > recheck_conn_at_tstamp:
       try:
-        ufr.set_card_id_send_conf(True)
-        set_async_at_tstamp = now + ufr_device_check_every
+        ufr.get_firmware_version()
+        recheck_conn_at_tstamp = now + ufr_device_check_every
       except:
         close_device = True
         continue
@@ -1306,7 +1319,7 @@ def ufr_listener(main_in_q):
     last_uid=uid
     try:
       uid=ufr.get_async_id(ufr_read_every)
-      set_async_at_tstamp = now + ufr_device_check_every
+      recheck_conn_at_tstamp = now + ufr_device_check_every
       if uid:
         uid=uid.replace(":", "").upper()
 
@@ -1327,26 +1340,16 @@ def ufr_listener(main_in_q):
       close_device = True
       continue
 
-    # Did the UID change or disappear?
+    # Did the UID change?
     if uid != last_uid:
 
       # Send the list to the main process
       main_in_q.put([UFR_LISTENER_UIDS_UPDATE, [uid] if uid else []])
 
-      # Try to set the red LED on if no card is present, off if a card is
-      # present. Fail silently
-      try:
-        ufr.red_light_control(not uid)
-      except:
-        pass
-
-      # Try to set the Nano Online LED colors if they're not None. Fail silently
-      rgb2 = ufr_no_rgb2_card_on if uid else ufr_no_rgb2_card_off
-      if ufr_no_rgb1 and rgb2:
-        try:
-          ufr.esp_set_display_data(ufr_no_rgb1, rgb2, 0)
-        except:
-          pass
+      # Update the state of the LEDs
+      red_led_state = not uid
+      ufr_no_rgb2 = ufr_no_rgb2_card_on if uid else ufr_no_rgb2_card_off
+      set_leds = True
 
 
 
