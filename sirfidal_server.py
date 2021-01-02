@@ -1828,7 +1828,7 @@ def main():
   active_adb_uids=[]
   active_pm3_uids=[]
   active_chameleon_uids=[]
-  active_ufrno_uids=[]
+  active_ufr_uids=[]
   active_uids=[]
   active_uids_prev=None
   auth_cache={}
@@ -1864,7 +1864,7 @@ def main():
         elif msg[0] == CHAMELEON_LISTENER_UIDS_UPDATE:
           active_chameleon_uids=msg[1]
         elif msg[0] == UFR_LISTENER_UIDS_UPDATE:
-          active_ufrno_uids=msg[1]
+          active_ufr_uids=msg[1]
 
         # Save the previous list of active UIDs
         active_uids_prev=active_uids
@@ -1873,7 +1873,7 @@ def main():
         active_uids=list(set(sorted(active_pcsc_uids + active_serial_uids + \
 				active_hid_uids + active_adb_uids + \
 				active_pm3_uids + active_chameleon_uids + \
-				active_ufrno_uids)))
+				active_ufr_uids)))
 
         send_active_uids_update=True
 

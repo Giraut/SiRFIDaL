@@ -159,7 +159,7 @@ As root:
          uFR Nano Online in HTTP mode or through the serial port), set
          ufr_polled_mode to True in sirfidal_server.py
       
-       - Make sure watch_ufrno is set to True in sirfidal_server.py
+       - Make sure watch_ufr is set to True in sirfidal_server.py
 
 
     * Python3 modules needed:
