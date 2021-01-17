@@ -175,9 +175,9 @@ ufr_device="tcp://ufr:8881"
 ufr_polled_mode=False		# Polled or asynchronous ID sending mode
 ufr_polled_power_saving=False	# uFR firmware > v5.0.51 required
 ufr_debounce_delay=0.2 #s
-ufr_no_rgb1=(32, 24, 0)		# For Nano Online, LED1 color
-ufr_no_rgb2_card_off=(24, 0, 0)	# For Nano Online, LED2 color if no card present
-ufr_no_rgb2_card_on=(0, 24, 0)	# For Nano Online, LED2 color if card present
+ufr_no_rgb1=(24, 16, 0)		# For Nano Online, LED1 color
+ufr_no_rgb2_card_off=(16, 0, 0)	# For Nano Online, LED2 color if no card present
+ufr_no_rgb2_card_on=(0, 16, 0)	# For Nano Online, LED2 color if card present
 ufr_device_check_every=10 #s
 
 # Server parameters
@@ -1284,19 +1284,22 @@ def ufr_listener(main_in_q):
       try:
         ufr=uFR.open(ufr_device, restore_on_close = True)
 
-        # Disable tag emulation / ad-hoc mode, in case we find the reader in
+        # Disable tag emulation and ad-hoc mode, in case we find the reader in
         # a strange state
         ufr.tag_emulation_stop()
         ufr.ad_hoc_emulation_stop()
 
         # Set asynchronous ID sending mode if needed, or enable anti-collision
-        # if we use polled mode
+        # if we use polled mode, and put the red LED on once and for all if we
+        # do power saving in polled mode
         if not ufr_polled_mode:
           ufr.disable_anti_collision()
           ufr.set_card_id_send_conf(True)
           recheck_conn_at_tstamp=now + ufr_device_check_every
         else:
           ufr.enable_anti_collision()
+          if ufr_polled_power_saving:
+            ufr.red_light_control(True)
 
       except:
         sleep(2)	# Wait a bit to reopen the device
@@ -1309,11 +1312,12 @@ def ufr_listener(main_in_q):
     # Should we set the LEDs?
     if set_leds:
 
-      # Try to set the red LED on. Fail silently
-      try:
-        ufr.red_light_control(red_led_state)
-      except:
-        pass
+      # Try to set the red LED on if the reader isn't asleep. Fail silently
+      if not (ufr_polled_mode and ufr_polled_power_saving):
+        try:
+          ufr.red_light_control(red_led_state)
+        except:
+          pass
 
       # Try to set the Nano Online LEDs if we have RGB values. Fail silently
       if ufr_no_rgb1 and ufr_no_rgb2:
@@ -1337,10 +1341,12 @@ def ufr_listener(main_in_q):
     last_uids=uids
     try:
       if ufr_polled_mode:
+        if ufr_polled_power_saving:
+          ufr.leave_sleep_mode()
         ufr.enum_cards()
         uids=sorted(ufr.list_cards())
         if ufr_polled_power_saving:
-          ufr.rf_reset(pyufr.uFRRFfieldCtl.OFF)
+          ufr.enter_sleep_mode()
       else:
         uid=ufr.get_async_id(ufr_read_every)
         uids=[uid] if uid else []
