@@ -1342,7 +1342,10 @@ def ufr_listener(main_in_q):
     try:
       if ufr_polled_mode:
         if ufr_polled_power_saving:
-          ufr.leave_sleep_mode()
+          try:
+            ufr.leave_sleep_mode()
+          except:
+            ufr.leave_sleep_mode()
         ufr.enum_cards()
         uids=sorted(ufr.list_cards())
         if ufr_polled_power_saving:
