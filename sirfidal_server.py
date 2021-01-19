@@ -175,9 +175,9 @@ ufr_device="tcp://ufr:8881"
 ufr_polled_mode=False		# Polled or asynchronous ID sending mode
 ufr_polled_power_saving=False	# uFR firmware > v5.0.51 required
 ufr_debounce_delay=0.2 #s
-ufr_no_rgb1=(24, 16, 0)		# For Nano Online, LED1 color
-ufr_no_rgb2_card_off=(16, 0, 0)	# For Nano Online, LED2 color if no card present
-ufr_no_rgb2_card_on=(0, 16, 0)	# For Nano Online, LED2 color if card present
+ufr_no_rgb1=(255, 160, 0)	# For Nano Online, LED1 color
+ufr_no_rgb2_tag_off=(160, 0, 0)	# For Nano Online, LED2 color if no card present
+ufr_no_rgb2_tag_on=(0, 160, 0)	# For Nano Online, LED2 color if card present
 ufr_device_check_every=10 #s
 
 # Server parameters
@@ -1306,7 +1306,7 @@ def ufr_listener(main_in_q):
         continue
 
       red_led_state=True
-      ufr_no_rgb2=ufr_no_rgb2_card_off
+      ufr_no_rgb2=ufr_no_rgb2_tag_off
       set_leds=True
 
     # Should we set the LEDs?
@@ -1403,7 +1403,7 @@ def ufr_listener(main_in_q):
 
       # Update the state of the LEDs
       red_led_state=not uids
-      ufr_no_rgb2=ufr_no_rgb2_card_on if uids else ufr_no_rgb2_card_off
+      ufr_no_rgb2=ufr_no_rgb2_tag_on if uids else ufr_no_rgb2_tag_off
       set_leds=True
 
       send_update=False
