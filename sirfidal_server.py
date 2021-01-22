@@ -121,7 +121,7 @@ See the parameters below to configure this script.
 ### Parameters
 # Types of RFID / NFC readers to watch
 watch_pcsc      =True
-watch_serial    =False
+watch_serial    =True
 watch_hid       =False
 watch_adb       =False	#Android device used as an external NFC reader
 watch_pm3       =False	#Proxmark3 reader used as a "dumb" UID reader
@@ -134,6 +134,7 @@ pcsc_read_every=0.2 #s
 # Serial parameters
 serial_read_every=0.2 #s
 serial_reader_dev_file="/dev/ttyUSB0"
+serial_reader_dev_file="/dev/rfcomm3"
 serial_baudrate=9600
 serial_uid_not_sent_inactive_timeout=1 #s
 
@@ -412,7 +413,9 @@ def serial_listener(main_in_q):
     # Open the reader's device file if it's closed
     if not serdev:
       try:
+        print("HERE")
         serdev=Serial(serial_reader_dev_file, serial_baudrate, timeout=0)
+        print("THERE")
       except KeyboardInterrupt:
         return(-1)
       except:

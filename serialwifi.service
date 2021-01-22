@@ -1,0 +1,23 @@
+# This systemd service file runs socat, along with a small watchdog script, to
+# connect to a US Converters Serial WiFi Adapter (P/N UCW232C or WA232E) or
+# similar device configured in TCP server mode, and redirect the TCP traffic to
+# a fake /dev/serialwifi device file (in reality, a PTY).
+#
+# This lets serial-aware applications transparently read or write the serial
+# data redirected to TCP by the converter as if through a local, physical
+# serial port.
+#
+# http://www.usconverters.com/index.php?main_page=product_info&products_id=404
+# http://www.usconverters.com/serial-rs232-wi-fi-adapter
+
+[Unit]
+Description=US Converters Serial WiFi Adapter virtual serial device
+
+[Service]
+Type=simple
+ExecStart=/bin/bash -c 'HOST=serialwifi; PORT=8080; /usr/bin/socat pty,link=/dev/serialwifi,raw tcp:$HOST:$PORT & PID=$!; while [ 1 ]; do if ! /bin/ping -c1 -W1 $HOST 2> /dev/null >/dev/null; then /bin/kill $PID; break; fi; if ! /bin/ps -p $PID > /dev/null; then break; fi; /bin/sleep 1; done'
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
