@@ -135,11 +135,10 @@ As root:
 
        - Set chameleon_dev_file to the device file corresponding to your
          ChameleonMini or ChameleonTiny in sirfidal_server.py
-       - Set the slot (setting) number you want to reserve for use as a reader
-         in chameleon_iso14443a_reader_slot in sirfidal_server.py. Be sure not
-         to use this slot for something else when you use your Chameleon as a
-         standalone device, as SiRFIDaL will automatically reconfigure it upon
-         connection and clobber your manual configuration.
+       - Make sure you configure one of the slots in your ChameleonMini or
+         ChameleonTiny as a reader (configuration "ISO14443A_READER"). If no
+         slot is configured as a reader, the white LED will flash slowly to
+         indicate that the reader is unusable.
        - Make sure watch_chameleon is set to True in sirfidal_server.py
 
     * Use with a uFR or uFR Nano Online reader in slave mode:
@@ -290,11 +289,6 @@ only once, then stay quiet until a new read is performed.
 That's because they're made to emulate keyboards, to automatically enter UIDs
 in a word processor or a spreadsheet. Obviously you don't want the reader to
 fill up your document with identical UIDs.
-
-Likewise, the ChameleonMini, ChameleonTiny and many serial readers are one-shot
-readers and send the UIDs they read only once until the transponder is removed
-from the field and a new one is read. Those readers are made primarily for
-single-shot rather than continuous authentication.
 
 As a result, with those readers, it's impossible to detect the presence of a
 transponder continuously. SiRFIDaL emulates a repeating device by pretending

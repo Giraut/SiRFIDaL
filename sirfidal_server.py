@@ -169,7 +169,6 @@ pm3_read_fdx       =False
 # Chameleon Mini / Tiny parameters
 chameleon_read_every=0.2 #s
 chameleon_dev_file="/dev/ttyACM0"
-chameleon_iso14443a_reader_slot=8
 chameleon_client_comm_timeout=2 #s
 chameleon_uid_not_sent_inactive_timeout=1 #s
 
@@ -1076,9 +1075,7 @@ def pm3_listener(workdir, main_in_q):
 def chameleon_listener(main_in_q):
   """Actively read ISO14443A UIDs from a single Chameleon Mini / Tiny device
   and send the list of active UIDs to the main process. One of the setting slots
-  will be automatically reconfigured as a reader, so don't configure it to use
-  your Chameleon device for something else when you don't use it as a reader
-  with SiRFIDaL
+  must be configured as a reader
   """
 
   # Modules
@@ -1100,6 +1097,7 @@ def chameleon_listener(main_in_q):
       try:
         chamdev=Serial(chameleon_dev_file, timeout=0)
         reader_state = 0
+        start_slot = -1
       except KeyboardInterrupt:
         return(-1)
       except:
@@ -1111,16 +1109,18 @@ def chameleon_listener(main_in_q):
 
     # Determine the command to send to the Chameleon - if any
     cmd = None
-    if reader_state == 0:	# Query the current slot
+    if reader_state==0:		# Query the current slot
       cmd = "SETTING?"
-    if reader_state == 3:	# Set the current slot
-      cmd = "SETTING={}".format(chameleon_iso14443a_reader_slot)
-    elif reader_state == 5:	# Current slot is configured as reader?
+    elif reader_state==3:	# Is the current slot configured as reader?
       cmd = "CONFIG?"
-    elif reader_state == 8:	# Configure current slot as reader
-      cmd = "CONFIG=ISO14443A_READER"
-    elif reader_state == 10:	# Send a read command
+    elif reader_state==6:	# Select the slot
+      cmd = "SETTING={}".format(slot)
+    elif reader_state==8:	# Send a read command
       cmd = "GETUID"
+    elif reader_state==11:	# Turn the field on
+      cmd = "FIELD=1"
+    elif reader_state==13:	# Turn the field off
+      cmd = "FIELD=0"
 
     # Send the command to the Chameleon
     if cmd:
@@ -1146,7 +1146,7 @@ def chameleon_listener(main_in_q):
 
       reader_state+=1
 
-    # Read UIDs from the reader
+    # Read responses from the reader
     rlines=[]
     b=""
     try:
@@ -1200,26 +1200,66 @@ def chameleon_listener(main_in_q):
     for l in rlines:
 
       # Are we waiting for a formatted reply and did we get the correct reply?
-      if (reader_state in (1, 6, 11) and l=="101:OK WITH TEXT") or \
-		(reader_state in (4, 9) and l=="100:OK"):
-        reader_state+=1
+      if (reader_state in (1, 4, 9) and l=="101:OK WITH TEXT") or \
+		(reader_state in (7, 12, 14) and l=="100:OK"):
+
+        if reader_state==7:	# Slot selection command successful
+          reader_state=3
+        elif reader_state==12:	# Field on command successful
+          sleep(.1)
+          reader_state+=1
+        elif reader_state==14:	# Field off command successful
+          sleep(1)
+          reader_state=11
+        else:			# Any other response line
+          reader_state+=1
 
       # Are we waiting for a slot number?
       elif reader_state==2 and re.match("^[0-9]$", l):
-        reader_state = 5 if int(l)==chameleon_iso14443a_reader_slot else 3
+        try:
+          slot=int(l)
+          slot=-1 if slot<1 else 8 if slot>8 else slot
+        except:
+          slot=-1
+
+        # If we got an error getting the slot number, close the reader
+        if slot==-1:
+          try:
+            chamdev.close()
+          except:
+            pass
+          uid=""
+          chamdev=None
+          sleep(2)	# Wait a bit to reopen the device
+          break
+
+        start_slot=slot
+        reader_state=3
 
       # Are we waiting for a slot configuration string?
-      elif reader_state==7:
-        reader_state = 10 if l=="ISO14443A_READER" else 8
+      elif reader_state==5:
+        if l=="ISO14443A_READER":
+          reader_state=8
+        else:
+          # Scan the next slot
+          slot=slot+1 if slot<8 else 1
+
+          # If we scanned all the slots, start flashing the field (which also
+          # flashes the white LED) to tell the user we can't do anything with
+          # the reader
+          if slot==start_slot:
+            reader_state=11
+          else:
+            reader_state=6
 
       # Did we get a GETUID timeout?
-      elif reader_state==11 and l=="203:TIMEOUT":
-        reader_state = 10
+      elif reader_state==9 and l=="203:TIMEOUT":
+        reader_state=8
 
       # Are we waiting for a UID
-      elif reader_state==12 and re.match("^[0-9a-zA-Z]+$", l):
+      elif reader_state==10 and re.match("^[0-9a-zA-Z]+$", l):
         uid=l.upper()
-        reader_state=10
+        reader_state=8
 
       # Invalid response
       else:
@@ -1274,7 +1314,7 @@ def ufr_listener(main_in_q):
   ufr=None
   uids=[]
 
-  close_device = False
+  close_device=False
 
   uids_off_report_tstamp=0
   last_sent_uids=None
@@ -1339,7 +1379,7 @@ def ufr_listener(main_in_q):
         except:
           pass
 
-      set_leds = False
+      set_leds=False
 
     # Should we recheck the connection with the reader?
     if not ufr_polled_mode and now > recheck_conn_at_tstamp:
