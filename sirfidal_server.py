@@ -119,9 +119,13 @@ See the parameters below to configure this script.
 """
 
 ### Parameters
+# Alternative configuration file: if you want to keep part or all of the
+# parameters below defined separately, declare them in this file
+config_file     ="/etc/sirfidal_server_parameters.py"
+
 # Types of RFID / NFC readers to watch
 watch_pcsc      =True
-watch_serial    =True
+watch_serial    =False
 watch_hid       =False
 watch_adb       =False	#Android device used as an external NFC reader
 watch_pm3       =False	#Proxmark3 reader used as a "dumb" UID reader
@@ -134,7 +138,6 @@ pcsc_read_every=0.2 #s
 # Serial parameters
 serial_read_every=0.2 #s
 serial_reader_dev_file="/dev/ttyUSB0"
-serial_reader_dev_file="/dev/rfcomm3"
 serial_baudrate=9600
 serial_uid_not_sent_inactive_timeout=1 #s
 
@@ -193,6 +196,15 @@ encrypted_uids_file="/etc/sirfidal_encr_uids"
 # Names of disallowed parent process names for requesting processes. This is a
 # very weak security check, but we leave it there just in case
 remote_user_parent_process_names=["sshd", "telnetd"]
+
+
+
+# Try to read the alternative configuration file. Any variables redefined in
+# this file will override the parameters above
+try:
+  exec(open(config_file).read())
+except:
+  pass
 
 
 
@@ -413,9 +425,7 @@ def serial_listener(main_in_q):
     # Open the reader's device file if it's closed
     if not serdev:
       try:
-        print("HERE")
         serdev=Serial(serial_reader_dev_file, serial_baudrate, timeout=0)
-        print("THERE")
       except KeyboardInterrupt:
         return(-1)
       except:
