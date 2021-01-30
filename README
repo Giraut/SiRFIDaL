@@ -160,6 +160,27 @@ As root:
       
        - Make sure watch_ufr is set to True in sirfidal_server.py
 
+    * Use with a reader that sends UIDs through GET or POST HTTP requests:
+
+       The SiRFIDaL server runs a small HTTP server to handle requests from
+       HTTP-aware readers:
+
+       - Set http_server_address to the address of the network interface
+         the SiRFIDaL server should bind to ("" means any interface) and
+         http_server_port to the port it should listen on for HTTP connections
+         in sirfidal_server.py
+
+       - Set the regular expressions to extract UIDs from GET or POST
+         requests in http_get_data_format and http_post_data_format in
+         sirfidal_server.py. Set either variable to None to disable the
+         corresponding HTTP method. The UID pattern in the regular expressions
+         should be the expression between parentheses.
+
+       - Set the reply that should be sent to the HTTP client after a GET or
+         POST request in sirfidal_server.py. Some readers behave differently
+         depending on what reply they are sent.
+
+       - Make sure watch_http is set to True in sirfidal_server.py
 
     * Python3 modules needed:
 

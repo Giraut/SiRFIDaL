@@ -127,10 +127,11 @@ config_file     ="/etc/sirfidal_server_parameters.py"
 watch_pcsc      =True
 watch_serial    =False
 watch_hid       =False
-watch_adb       =False	#Android device used as an external NFC reader
-watch_pm3       =False	#Proxmark3 reader used as a "dumb" UID reader
-watch_chameleon =False	#Chameleon Mini / Tiny used as an external NFC reader
-watch_ufr       =False	#uFR or uFR Nano Online reader in slave mode
+watch_adb       =False	# Android device used as an external NFC reader
+watch_pm3       =False	# Proxmark3 reader used as a "dumb" UID reader
+watch_chameleon =False	# Chameleon Mini / Tiny used as an external NFC reader
+watch_ufr       =False	# uFR or uFR Nano Online reader in slave mode
+watch_http      =False	# HTTP server getting UIDs using the GET or POST method
 
 # PC/SC parameters
 pcsc_read_every=0.2 #s
@@ -182,6 +183,16 @@ ufr_no_rgb1=(255, 160, 0)	# For Nano Online, LED1 color
 ufr_no_rgb2_tag_off=(160, 0, 0)	# For Nano Online, LED2 color if no card present
 ufr_no_rgb2_tag_on=(0, 160, 0)	# For Nano Online, LED2 color if card present
 ufr_device_check_every=10 #s
+
+# HTTP server getting UIDs using the GET or POST method
+http_read_every=0.2 #s
+http_server_address=""
+http_server_port=30080
+http_get_data_format="^.*data=%02([0-9A-F]+)%0D%0A%03$"	# None to disable GET
+http_get_reply="OK"
+http_post_data_format="^.*UID=([0-9a-fA-F:]+).*$"	# None to disable POST
+http_post_reply=""
+http_uid_not_sent_inactive_timeout=1 #s
 
 # Server parameters
 max_server_connections=10
@@ -240,26 +251,27 @@ ADB_LISTENER_UIDS_UPDATE       =4
 PM3_LISTENER_UIDS_UPDATE       =5
 CHAMELEON_LISTENER_UIDS_UPDATE =6
 UFR_LISTENER_UIDS_UPDATE       =7
-NEW_CLIENT                     =8
-NEW_CLIENT_ACK                 =9
-VOID_REQUEST                   =10
-VOID_REQUEST_TIMEOUT           =11
-WAITAUTH_REQUEST               =12
-AUTH_RESULT                    =13
-AUTH_OK                        =14
-AUTH_NOK                       =15
-WATCHNBUIDS_REQUEST            =16
-NBUIDS_UPDATE                  =17
-WATCHUIDS_REQUEST              =18
-UIDS_UPDATE                    =19
-ADDUSER_REQUEST                =20
-DELUSER_REQUEST                =21
-ENCRUIDS_UPDATE                =22
-ENCRUIDS_UPDATE_ERR_EXISTS     =23
-ENCRUIDS_UPDATE_ERR_NONE       =24
-ENCRUIDS_UPDATE_ERR_TIMEOUT    =25
-CLIENT_HANDLER_STOP_REQUEST    =26
-CLIENT_HANDLER_STOP            =27
+HTTP_LISTENER_UIDS_UPDATE      =8
+NEW_CLIENT                     =9
+NEW_CLIENT_ACK                 =10
+VOID_REQUEST                   =11
+VOID_REQUEST_TIMEOUT           =12
+WAITAUTH_REQUEST               =13
+AUTH_RESULT                    =14
+AUTH_OK                        =15
+AUTH_NOK                       =16
+WATCHNBUIDS_REQUEST            =17
+NBUIDS_UPDATE                  =18
+WATCHUIDS_REQUEST              =19
+UIDS_UPDATE                    =20
+ADDUSER_REQUEST                =21
+DELUSER_REQUEST                =22
+ENCRUIDS_UPDATE                =23
+ENCRUIDS_UPDATE_ERR_EXISTS     =24
+ENCRUIDS_UPDATE_ERR_NONE       =25
+ENCRUIDS_UPDATE_ERR_TIMEOUT    =26
+CLIENT_HANDLER_STOP_REQUEST    =27
+CLIENT_HANDLER_STOP            =28
 
 
 
@@ -1473,6 +1485,121 @@ def ufr_listener(main_in_q):
 
 
 
+def http_listener(main_in_q):
+  """Run a simplistic web server to receive UIDs in HTTP GET or POST messages,
+  then send the list of active UIDs to the main process.
+  """
+
+  # Modules
+  from http.server import BaseHTTPRequestHandler, HTTPServer
+
+  # Dummy error handler to abuse the exception mechanism to bubble retrieved
+  # UIDs to the main process from the do_GET or do_POST handler
+  def error_handler(request, client_address):
+    raise
+
+  # Handler class
+  class handler_class(BaseHTTPRequestHandler):
+
+    def do_GET(self):
+
+      if not http_get_data_format:
+        return
+
+      # Does the GET URL contain a valid UID?
+      m=re.findall(http_get_data_format, self.path)
+      uid="".join([c for c in m[0].upper() if c in hexdigits]) if m else ""
+
+      # Reply to the HTTP client
+      self.send_response(200)
+      self.send_header('Content-type', 'text/plain')
+      self.end_headers()
+      self.wfile.write(http_get_reply.encode("ascii"))
+
+      # Bubble up the UID (or lack thereof) to the main loop
+      raise(RuntimeWarning(uid))
+
+    def do_POST(self):
+
+      if not http_post_data_format:
+        return
+
+      # Get the POST data from the HTTP client that reported it
+      content_length=int(self.headers['Content-Length'])
+      post_data=self.rfile.read(content_length).decode("ascii") \
+			if content_length>0 else ""
+
+      # Does the POST data contain a valid UID?
+      m=re.findall(http_post_data_format, post_data)
+      uid="".join([c for c in m[0].upper() if c in hexdigits]) if m else ""
+
+      # Reply to the HTTP client
+      self.send_response(200)
+      self.send_header('Content-type', 'text/plain')
+      self.end_headers()
+      self.wfile.write(http_post_reply.encode("ascii"))
+
+      # Bubble up the UID (or lack thereof) to the main loop
+      raise(RuntimeWarning(uid))
+
+    def log_message(self, format, *args):
+      return
+
+  setproctitle("sirfidal_server_http_listener")
+
+  # Set up the HTTP server
+  httpd=HTTPServer((http_server_address, http_server_port), handler_class)
+  httpd.timeout=http_read_every
+  httpd.handle_timeout=lambda: (_ for _ in ()).throw(TimeoutError())
+  httpd.handle_error=error_handler
+
+  uid_lastseens={}
+
+  send_active_uids_update=True
+
+  while True:
+
+    uid=""
+
+    # Handle one HTTP request
+    try:
+      httpd.handle_request()
+    except RuntimeWarning as e:
+      uid=str(e)
+    except KeyboardInterrupt:
+      break
+    except:
+      pass
+
+    tstamp=int(datetime.now().timestamp())
+
+    # If we got a UID, add or update its timestamp in the last-seen list
+    if uid:
+      if uid not in uid_lastseens:
+        send_active_uids_update=True
+      uid_lastseens[uid]=tstamp
+
+    # Remove UID timestamps that are too old from the last-seen list
+    for uid in list(uid_lastseens):
+      if tstamp - uid_lastseens[uid] > http_uid_not_sent_inactive_timeout:
+        del uid_lastseens[uid]
+        send_active_uids_update=True
+
+    # If the active UIDs have changed...
+    if send_active_uids_update:
+
+      # ...send the list to the main process...
+      main_in_q.put([HTTP_LISTENER_UIDS_UPDATE, list(uid_lastseens)])
+      send_active_uids_update=False
+
+    else:
+
+      # ...else send a keepalive message to the main process so it can trigger
+      # timeouts
+      main_in_q.put([MAIN_PROCESS_KEEPALIVE])
+
+
+
 def server(main_in_q, sock):
   """Handle client connections to the server
   """
@@ -1896,6 +2023,10 @@ def main():
   if watch_ufr:
     Process(target=ufr_listener, args=(main_in_q,)).start()
 
+  # Start the HTTP server listener
+  if watch_http:
+    Process(target=http_listener, args=(main_in_q,)).start()
+
 
 
   # Main process
@@ -1906,6 +2037,7 @@ def main():
   active_pm3_uids=[]
   active_chameleon_uids=[]
   active_ufr_uids=[]
+  active_http_uids=[]
   active_uids=[]
   active_uids_prev=None
   auth_cache={}
@@ -1926,7 +2058,7 @@ def main():
       if msg[0] in (PCSC_LISTENER_UIDS_UPDATE, SERIAL_LISTENER_UIDS_UPDATE,
 		HID_LISTENER_UIDS_UPDATE, ADB_LISTENER_UIDS_UPDATE,
 		PM3_LISTENER_UIDS_UPDATE, CHAMELEON_LISTENER_UIDS_UPDATE,
-		UFR_LISTENER_UIDS_UPDATE):
+		UFR_LISTENER_UIDS_UPDATE, HTTP_LISTENER_UIDS_UPDATE):
 
         if msg[0] == PCSC_LISTENER_UIDS_UPDATE:
           active_pcsc_uids=msg[1]
@@ -1942,6 +2074,8 @@ def main():
           active_chameleon_uids=msg[1]
         elif msg[0] == UFR_LISTENER_UIDS_UPDATE:
           active_ufr_uids=msg[1]
+        elif msg[0] == HTTP_LISTENER_UIDS_UPDATE:
+          active_http_uids=msg[1]
 
         # Save the previous list of active UIDs
         active_uids_prev=active_uids
@@ -1950,7 +2084,7 @@ def main():
         active_uids=list(set(sorted(active_pcsc_uids + active_serial_uids + \
 				active_hid_uids + active_adb_uids + \
 				active_pm3_uids + active_chameleon_uids + \
-				active_ufr_uids)))
+				active_ufr_uids + active_http_uids)))
 
         send_active_uids_update=True
 
