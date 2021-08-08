@@ -200,6 +200,7 @@ tcp_read_every=0.2 #s
 tcp_server_address=""
 tcp_server_port=8080
 tcp_connect_timeout=5
+tcp_keepalive=5 #s - None to disable
 tcp_uid_not_sent_inactive_timeout=1 #s
 
 # Server parameters
@@ -1625,6 +1626,8 @@ def tcp_listener(main_in_q):
   sock=None
   send_active_uids_update=True
 
+  keepalive_timeout=0
+
   while True:
 
     # Open the socket if it's closed
@@ -1651,7 +1654,7 @@ def tcp_listener(main_in_q):
 
         try:
 
-          b=os.read(sock.fileno(), 256).decode("ascii")
+          b=sock.recv(256).decode("ascii")
 
         except KeyboardInterrupt:
           return(-1)
@@ -1723,6 +1726,23 @@ def tcp_listener(main_in_q):
       # ...else send a keepalive message to the main process so it can trigger
       # timeouts
       main_in_q.put([MAIN_PROCESS_KEEPALIVE])
+
+    # Send a keepalive message to the TCP server to detect if the link went down
+    if sock and tcp_keepalive:
+      if tstamp > keepalive_timeout:
+        try:
+          sock.sendall(b"\n")
+        except KeyboardInterrupt:
+          return(-1)
+        except:
+          try:
+            sock.close()
+          except:
+            pass
+          sock=None
+          sleep(2)	# Wait a bit to reopen the socket
+          continue
+        keepalive_timeout=tstamp+tcp_keepalive
 
 
 
