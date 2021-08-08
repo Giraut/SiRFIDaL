@@ -91,7 +91,7 @@ As root:
 
     * Use with PC/SC readers:
 
-       apt-get install pcscd pcsc-tools
+       apt-get install pcscd pcsc-tools python3-pyscard
 
        - Configure PC/SC for your readers. If pcsc_scan works, SiRFIDaL will
          work also. See https://pcsclite.apdu.fr/
@@ -226,7 +226,7 @@ As root:
   * Copy the files:
 
     cp *.py /usr/local/bin
-    cp *.service files /lib/systemd/system
+    cp *.service /lib/systemd/system
     cp sirfidal_pam.config /usr/share/pam-configs
     mkdir -p /usr/local/share/sounds/sirfidal
     cp sounds/* /usr/local/share/sounds/sirfidal
