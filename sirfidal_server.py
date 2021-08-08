@@ -132,6 +132,7 @@ watch_pm3       =False	# Proxmark3 reader used as a "dumb" UID reader
 watch_chameleon =False	# Chameleon Mini / Tiny used as an external NFC reader
 watch_ufr       =False	# uFR or uFR Nano Online reader in slave mode
 watch_http      =False	# HTTP server getting UIDs using the GET or POST method
+watch_tcp       =False	# TCP client getting UIDs from a TCP server
 
 # PC/SC parameters
 pcsc_read_every=0.2 #s
@@ -194,6 +195,13 @@ http_post_data_format="^.*UID=([0-9a-fA-F:]+).*$"	# None to disable POST
 http_post_reply=""
 http_uid_not_sent_inactive_timeout=1 #s
 
+# TCP client getting UIDs from a TCP server
+tcp_read_every=0.2 #s
+tcp_server_address=""
+tcp_server_port=8080
+tcp_connect_timeout=5
+tcp_uid_not_sent_inactive_timeout=1 #s
+
 # Server parameters
 max_server_connections=10
 max_auth_request_wait=60 #s
@@ -238,7 +246,7 @@ from filelock import FileLock, Timeout
 from subprocess import Popen, DEVNULL, PIPE
 from multiprocessing import Process, Queue, Pipe
 from socket import socket, timeout, AF_UNIX, SOCK_STREAM, SOL_SOCKET, \
-		SO_REUSEADDR, SO_PEERCRED
+			SO_REUSEADDR, SO_PEERCRED
 
 
 
@@ -252,26 +260,27 @@ PM3_LISTENER_UIDS_UPDATE       =5
 CHAMELEON_LISTENER_UIDS_UPDATE =6
 UFR_LISTENER_UIDS_UPDATE       =7
 HTTP_LISTENER_UIDS_UPDATE      =8
-NEW_CLIENT                     =9
-NEW_CLIENT_ACK                 =10
-VOID_REQUEST                   =11
-VOID_REQUEST_TIMEOUT           =12
-WAITAUTH_REQUEST               =13
-AUTH_RESULT                    =14
-AUTH_OK                        =15
-AUTH_NOK                       =16
-WATCHNBUIDS_REQUEST            =17
-NBUIDS_UPDATE                  =18
-WATCHUIDS_REQUEST              =19
-UIDS_UPDATE                    =20
-ADDUSER_REQUEST                =21
-DELUSER_REQUEST                =22
-ENCRUIDS_UPDATE                =23
-ENCRUIDS_UPDATE_ERR_EXISTS     =24
-ENCRUIDS_UPDATE_ERR_NONE       =25
-ENCRUIDS_UPDATE_ERR_TIMEOUT    =26
-CLIENT_HANDLER_STOP_REQUEST    =27
-CLIENT_HANDLER_STOP            =28
+TCP_LISTENER_UIDS_UPDATE       =9
+NEW_CLIENT                     =10
+NEW_CLIENT_ACK                 =11
+VOID_REQUEST                   =12
+VOID_REQUEST_TIMEOUT           =13
+WAITAUTH_REQUEST               =14
+AUTH_RESULT                    =15
+AUTH_OK                        =16
+AUTH_NOK                       =17
+WATCHNBUIDS_REQUEST            =18
+NBUIDS_UPDATE                  =19
+WATCHUIDS_REQUEST              =20
+UIDS_UPDATE                    =21
+ADDUSER_REQUEST                =22
+DELUSER_REQUEST                =23
+ENCRUIDS_UPDATE                =24
+ENCRUIDS_UPDATE_ERR_EXISTS     =25
+ENCRUIDS_UPDATE_ERR_NONE       =26
+ENCRUIDS_UPDATE_ERR_TIMEOUT    =27
+CLIENT_HANDLER_STOP_REQUEST    =28
+CLIENT_HANDLER_STOP            =29
 
 
 
@@ -1600,6 +1609,123 @@ def http_listener(main_in_q):
 
 
 
+def tcp_listener(main_in_q):
+  """Read the UIDs from a TCP socket
+  """
+
+  # Modules
+  from socket import socket, timeout, AF_INET, SOCK_STREAM
+
+  setproctitle("sirfidal_server_tcp_listener")
+
+  recvbuf=""
+
+  uid_lastseens={}
+
+  sock=None
+  send_active_uids_update=True
+
+  while True:
+
+    # Open the socket if it's closed
+    if not sock:
+      try:
+        sock=socket(AF_INET, SOCK_STREAM)
+        sock.settimeout(tcp_connect_timeout)
+        sock.connect((tcp_server_address, tcp_server_port))
+      except KeyboardInterrupt:
+        return(-1)
+      except:
+        sock=None
+
+    if not sock:
+      sleep(2)	# Wait a bit to reopen the socket
+      continue
+
+    # Read UIDs from the socket
+    rlines=[]
+    b=""
+    try:
+
+      if(select([sock.fileno()], [], [], tcp_read_every)[0]):
+
+        try:
+
+          b=os.read(sock.fileno(), 256).decode("ascii")
+
+        except KeyboardInterrupt:
+          return(-1)
+        except:
+          b=""
+
+        if not b:
+          try:
+            sock.close()
+          except:
+            pass
+          sock=None
+          sleep(2)	# Wait a bit to reopen the socket
+          continue
+
+
+        # Split the data into lines
+        for c in b:
+
+          if c=="\n" or c=="\r":
+            rlines.append(recvbuf)
+            recvbuf=""
+
+          elif len(recvbuf)<256 and c.isprintable():
+            recvbuf+=c
+
+    except KeyboardInterrupt:
+      return(-1)
+    except:
+      try:
+        sock.close()
+      except:
+        pass
+      sock=None
+      sleep(2)	# Wait a bit to reopen the socket
+      continue
+
+    tstamp=int(datetime.now().timestamp())
+
+    # Process the lines from the device
+    for l in rlines:
+
+      # Strip anything not hexadecimal out of the UID and uppercase it,
+      # so it has a chance to be compatible with UIDs read by the other
+      # listeners
+      uid="".join([c for c in l.upper() if c in hexdigits])
+
+      # If we got a UID, add or update its timestamp in the last-seen list
+      if uid:
+        if uid not in uid_lastseens:
+          send_active_uids_update=True
+        uid_lastseens[uid]=tstamp
+
+    # Remove UID timestamps that are too old from the last-seen list
+    for uid in list(uid_lastseens):
+      if tstamp - uid_lastseens[uid] > tcp_uid_not_sent_inactive_timeout:
+        del uid_lastseens[uid]
+        send_active_uids_update=True
+
+    # If the active UIDs have changed...
+    if send_active_uids_update:
+
+      # ...send the list to the main process...
+      main_in_q.put([TCP_LISTENER_UIDS_UPDATE, list(uid_lastseens)])
+      send_active_uids_update=False
+
+    else:
+
+      # ...else send a keepalive message to the main process so it can trigger
+      # timeouts
+      main_in_q.put([MAIN_PROCESS_KEEPALIVE])
+
+
+
 def server(main_in_q, sock):
   """Handle client connections to the server
   """
@@ -2027,6 +2153,10 @@ def main():
   if watch_http:
     Process(target=http_listener, args=(main_in_q,)).start()
 
+  # Start the TCP listener
+  if watch_tcp:
+    Process(target=tcp_listener, args=(main_in_q,)).start()
+
 
 
   # Main process
@@ -2038,6 +2168,7 @@ def main():
   active_chameleon_uids=[]
   active_ufr_uids=[]
   active_http_uids=[]
+  active_tcp_uids=[]
   active_uids=[]
   active_uids_prev=None
   auth_cache={}
@@ -2058,7 +2189,8 @@ def main():
       if msg[0] in (PCSC_LISTENER_UIDS_UPDATE, SERIAL_LISTENER_UIDS_UPDATE,
 		HID_LISTENER_UIDS_UPDATE, ADB_LISTENER_UIDS_UPDATE,
 		PM3_LISTENER_UIDS_UPDATE, CHAMELEON_LISTENER_UIDS_UPDATE,
-		UFR_LISTENER_UIDS_UPDATE, HTTP_LISTENER_UIDS_UPDATE):
+		UFR_LISTENER_UIDS_UPDATE, HTTP_LISTENER_UIDS_UPDATE,
+		TCP_LISTENER_UIDS_UPDATE):
 
         if msg[0] == PCSC_LISTENER_UIDS_UPDATE:
           active_pcsc_uids=msg[1]
@@ -2076,6 +2208,8 @@ def main():
           active_ufr_uids=msg[1]
         elif msg[0] == HTTP_LISTENER_UIDS_UPDATE:
           active_http_uids=msg[1]
+        elif msg[0] == TCP_LISTENER_UIDS_UPDATE:
+          active_tcp_uids=msg[1]
 
         # Save the previous list of active UIDs
         active_uids_prev=active_uids
@@ -2084,7 +2218,8 @@ def main():
         active_uids=list(set(sorted(active_pcsc_uids + active_serial_uids + \
 				active_hid_uids + active_adb_uids + \
 				active_pm3_uids + active_chameleon_uids + \
-				active_ufr_uids + active_http_uids)))
+				active_ufr_uids + active_http_uids + \
+				active_tcp_uids)))
 
         send_active_uids_update=True
 

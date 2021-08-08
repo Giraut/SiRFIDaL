@@ -92,27 +92,34 @@ As root:
     * Use with PC/SC readers:
 
        apt-get install pcscd pcsc-tools
+
        - Configure PC/SC for your readers. If pcsc_scan works, SiRFIDaL will
          work also. See https://pcsclite.apdu.fr/
+
        - Make sure watch_pcsc is set to True in sirfidal_server.py
 
     * Use with a serial reader:
 
        - Set serial_reader_dev_file to the device file corresponding to your
          reader in sirfidal_server.py
+
        - Make sure watch_serial is set to True in sirfidal_server.py
 
     * Use with a HID reader [See Limitation below]:
 
        - Set hid_reader_dev_file to the device file corresponding to your
          reader in sirfidal_server.py
+
        - Make sure watch_hid is set to True in sirfidal_server.py
 
     * Use with an NFC-enabled Android device as a reader [See Android note]:
 
        apt-get install adb
+
        - Configure your Android device following the instructions below
+
        - Make sure watch_adb is set to True in sirfidal_server.py
+
        - When connecting your Android device to the computer running the
          SiRFIDaL server for the first time, it will ask you if you want to
          allow USB debugging: check "Always allow from this computer" and
@@ -122,23 +129,28 @@ As root:
 
        - Set pm3_client to the path of your Proxmark3 client's executable in
          sirfidal_server.py
+
        - Set pm3_reader_dev_file to the device file corresponding to your
          Proxmark3 in sirfidal_server.py
+
        - Enable of disable the different types of transponders you want to be
          able to read with the pm3_read_* lines. Several types of transponders
          may be enabled at the same time, but be aware that if you mix LF and HF
          transponders, the reader will be extremely slow. For best performances,
          enable only HF transponders or only LF transponders, but not both.
+
        - Make sure watch_pm3 is set to True in sirfidal_server.py
 
     * Use with a ChameleonMini or ChameleonTiny:
 
        - Set chameleon_dev_file to the device file corresponding to your
          ChameleonMini or ChameleonTiny in sirfidal_server.py
+
        - Make sure you configure one of the slots in your ChameleonMini or
          ChameleonTiny as a reader (configuration "ISO14443A_READER"). If no
          slot is configured as a reader, the white LED will flash slowly to
          indicate that the reader is unusable.
+
        - Make sure watch_chameleon is set to True in sirfidal_server.py
 
     * Use with a uFR or uFR Nano Online reader in slave mode:
@@ -181,6 +193,17 @@ As root:
          depending on what reply they are sent.
 
        - Make sure watch_http is set to True in sirfidal_server.py
+
+    * Use with a networked reader that sends UIDs through a TCP server:
+
+       For networked RFID readers that send UIDs line by line, much like serial
+       readers, but makes them available through a TCP server.
+
+       - Set tcp_server_address to the address of the reader
+
+       - Set tcp_server_port to the port the reader is listening on
+
+       - Make sure watch_tcp is set to True in sirfidal_server.py
 
     * Python3 modules needed:
 
