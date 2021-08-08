@@ -212,6 +212,9 @@ socket_path="/tmp/sirfidal_server.socket"
 # Encrypted UIDs file path
 encrypted_uids_file="/etc/sirfidal_encr_uids"
 
+# Optional UID translation table, for special UIDs
+uids_translation_table = {}
+
 # Names of disallowed parent process names for requesting processes. This is a
 # very weak security check, but we leave it there just in case
 remote_user_parent_process_names=["sshd", "telnetd"]
@@ -2231,17 +2234,23 @@ def main():
         elif msg[0] == TCP_LISTENER_UIDS_UPDATE:
           active_tcp_uids=msg[1]
 
-        # Save the previous list of active UIDs
-        active_uids_prev=active_uids
-
-        # Merge the lists of UIDs from all the listeners
-        active_uids=list(set(sorted(active_pcsc_uids + active_serial_uids + \
+        # Merge new the lists of UIDs from all the listeners and filter out
+        # ignored UIDs
+        active_uids_new=list(set(sorted(
+				[uids_translation_table[uid] \
+				if uid in uids_translation_table \
+				else uid for uid in
+				active_pcsc_uids + active_serial_uids + \
 				active_hid_uids + active_adb_uids + \
 				active_pm3_uids + active_chameleon_uids + \
 				active_ufr_uids + active_http_uids + \
-				active_tcp_uids)))
+				active_tcp_uids])))
 
-        send_active_uids_update=True
+        # Has the list of UIDs changed?
+        if active_uids_new!=active_uids:
+          active_uids_prev=active_uids
+          active_uids=active_uids_new
+          send_active_uids_update=True
 
       # New client notification from a client handler
       elif msg[0] == NEW_CLIENT:
