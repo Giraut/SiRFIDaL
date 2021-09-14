@@ -65,7 +65,7 @@ list of server requests and responses:
 
 Service:        Authenticate a user
 Client sends:   WAITAUTH <user> <max wait (int or float) in s>
-Server replies: AUTHOK [authenticating UID]
+Server replies: AUTHOK [authenticating UID #1] [authenticating UID #2] ...
                 NOAUTH
 
 Service:        Watch the evolution of the number of active UIDs in real-time
@@ -1882,9 +1882,10 @@ def client_handler(pid, uid, gid, pw_name,
         elif msg[0]==AUTH_RESULT:
           csendbuf="AUTHOK" if msg[1][0]==AUTH_OK else "NOAUTH"
 
-          # Also send the UID in plaintext if the main process deems it okay
+          # Also send the authenticating UIDs in plaintext if the main process
+          # deems it okay
           if msg[1][1]:
-            csendbuf+=" {}".format(msg[1][1])
+            csendbuf+=" {}".format(" ".join([uid for uid in msg[1][1]]))
 
           continue
 
@@ -2195,7 +2196,7 @@ def main():
   active_uids=[]
   active_uids_prev=None
   auth_cache={}
-  auth_uid_cache={}
+  auth_uids_cache={}
   send_active_uids_update=False
   active_clients={}
 
@@ -2319,13 +2320,13 @@ def main():
     # list of active UIDs has changed, wipe the user authentication cache
     if load_encruids() or send_active_uids_update:
       auth_cache={}
-      auth_uid_cache={}
+      auth_uids_cache={}
 
     # Process the active clients' requests
     for cpid in active_clients:
 
       auth=False
-      auth_uid=None
+      auth_uids=[]
 
       # If we arrive here following a keepalive message, only process timeouts
       if msg[0] != MAIN_PROCESS_KEEPALIVE:
@@ -2350,27 +2351,22 @@ def main():
         # Authentication request
         elif active_clients[cpid].request == WAITAUTH_REQUEST:
 
-          # First try to find a cached authentication status for that user
+          # First, try to find a cached authentication status for that user...
           if active_clients[cpid].user in auth_cache:
 
             auth=auth_cache[active_clients[cpid].user]
-            auth_uid=auth_uid_cache[active_clients[cpid].user]
+            auth_uids=auth_uids_cache[active_clients[cpid].user]
 
-          # Second try to match one of the active UIDs with one of the
-          # registered encrypted UIDs associated with that user
+          # otherwise try to match all the active UIDs with the registered
+          # encrypted UIDs associated with that user
           else:
 
             for uid in active_uids:
               for registered_user, registered_uid_encr in encruids:
                 if registered_user == active_clients[cpid].user and crypt(
-			  uid,
-			  registered_uid_encr
-			) == registered_uid_encr:
-                  auth=True	# User authenticated...
-                  auth_uid=uid	#...with this UID
-                  break
-              if auth:
-                break
+			  uid, registered_uid_encr) == registered_uid_encr:
+                  auth=True		# User authenticated...
+                  auth_uids.append(uid)	#...with this UID
 
             # Cache the result of this authentication - valid as long as the
             # list of active UIDs doesn't change and the encrypted IDs file
@@ -2378,7 +2374,7 @@ def main():
             # process asks an authentication and nothing has changed since the
             # previous request
             auth_cache[active_clients[cpid].user]=auth
-            auth_uid_cache[active_clients[cpid].user]=auth_uid
+            auth_uids_cache[active_clients[cpid].user]=auth_uids
 
         # Add user request: if we have exactly one active UID, associate it
         # with the requested user
@@ -2461,7 +2457,7 @@ def main():
 		(auth or active_clients[cpid].expires==None or \
 		msg_tstamp >= active_clients[cpid].expires):
         active_clients[cpid].main_out_p.send([AUTH_RESULT, [AUTH_OK if auth
-		else AUTH_NOK, auth_uid if auth and \
+		else AUTH_NOK, auth_uids if auth and \
 		active_clients[cpid].user == active_clients[cpid].pw_name \
 		else None]])
         active_clients[cpid].request=VOID_REQUEST
