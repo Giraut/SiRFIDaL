@@ -153,7 +153,7 @@ def decrypt(bes, key):
     return(AESGCM(key).decrypt(es[:12], es[12:], b"").decode("utf-8"))
   except:
     return(None)
-  
+
 
 
 def main():
@@ -221,6 +221,7 @@ def main():
   do_release_defsfile_lock=False
   do_return_status=None
 
+  auth_uids=set()
   firstauth=True
 
   # Main loop
@@ -280,7 +281,8 @@ def main():
 
     # Send the request to the server
     try:
-      sock.sendall("WAITAUTH {} 1\n".format(user).encode("ascii"))
+      sock.sendall("WAITAUTH {} {}\n".format(user, "0" if firstauth else "1").
+			encode("ascii"))
     except:
       sock.close()
       sock=None
@@ -288,18 +290,12 @@ def main():
       continue
 
     # Get the user's authentication status
-    last_user_authenticated=user_authenticated
-    user_authenticated=None
+    got_waitauth_reply=False
 
-    while user_authenticated==None:
+    while not got_waitauth_reply:
 
       clines=[]
 
-      if firstauth:
-
-        print("Waiting for UID - CTRL-C to quit...")
-        firstauth=False
-       
       # Get data from the socket
       try:
         b=sock.recv(256).decode("ascii")
@@ -334,25 +330,35 @@ def main():
 
         # Retrieve the user's authentication status from the server's reply
         if l[:6] == "AUTHOK":
-          user_authenticated=True
-          auth_uid=l[6:].strip()
+          got_waitauth_reply=True
+          last_auth_uids=auth_uids
+          auth_uids=set(l[6:].split())
 
         elif l == "NOAUTH":
-          user_authenticated=False
+          last_auth_uids=auth_uids
+          auth_uids=set()
+          got_waitauth_reply=True
 
     if not sock:
       if do_return_status==None:
         sleep(1)
       continue
 
-    # The user has just authenticated
-    if not last_user_authenticated and user_authenticated:
+    # The first authentication was just to get the current authentication status
+    # of the user the first time the program is run, in case they're already
+    # authenticated, and we should only consider a new additional UID for
+    # automatic typing
+    if firstauth:
+        print("Waiting for UID - CTRL-C to quit...")
+        last_auth_uids=auth_uids
+        firstauth=False
 
-      # Check that the server has returned a UID - it should not reply without
-      # sending us one, since we requested authentication for ourselves
-      if not auth_uid:
-        print("Error: the server didn't return a UID")
-        continue
+    # Do we have new UIDs (meaning either the user has authenticated for the
+    # first time, or has authenticated again with one or more another UIDs)?
+    if auth_uids > last_auth_uids:
+
+      # Get the first new authentication UID
+      auth_uid=list(auth_uids - last_auth_uids)[0]
 
       # Get the active window
       try:
@@ -411,7 +417,7 @@ def main():
         newstr=encrypt(newstr, auth_uid)
 
         for d in defsfile:
-          
+
           if d[0]==wmclass[1] and d[1]==wmclass[0] and d[2]==wmname:
 
             if not defsfile_modified:
@@ -503,9 +509,10 @@ def main():
 
         do_release_defsfile_lock=True
 
-    # If the server has returned a successful authentication, sleep a bit so we
-    # don't run a tight loop as long as the UID is active
-    if user_authenticated:
+    # If the server has returned a successful authentication but the list of
+    # active authenticated UIDs hasn't changed, sleep a bit so we don't run
+    # a tight loop as long as the same UIDs are active
+    if auth_uids and auth_uids == last_auth_uids:
       sleep(0.2)
 
 
