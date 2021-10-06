@@ -1,0 +1,17 @@
+# This udev rule creates the symlink "/dev/input/ufr" pointed to the event
+# device of a uFR Nano Online running in BT HID mode (i.e. acting as a
+# bluetooth keyboard), so that the SiRFIDaL server's HID listener can always
+# find the correct device file regardless of the event device number it is
+# assigned upon connection.
+#
+# Also, this rule assigns the bogus seat ID "none" to the uFR Nano Online
+# "keyboard" so it doesn't type into the terminal or in X before it's opened by
+# the SiRFIDaL server.
+#
+# Simply replace the name to match your own uFR Nano Online, save this file
+# in /etc/udev/rules.d/99-ufr_nano_online_bt_hid.rules, then run:
+#
+# udevadm control --reload-rules
+# udevadm trigger
+#
+SUBSYSTEMS=="input", ATTRS{name}=="ON102339_HID Keyboard", SYMLINK+="input/ufr", ENV{ID_SEAT}="none"
