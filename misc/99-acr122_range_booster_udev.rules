@@ -1,0 +1,7 @@
+# udev rules file to automatically boost the range of an ACR122U reader upon
+# connection. It assumes you've installed the acr122u_range_booster.py script in
+# /usr/local/bin
+#
+# This file should be installed in /etc/udev/rules.d
+
+ATTRS{idVendor}=="072f", ATTRS{idProduct}=="2200", RUN+="/usr/local/bin/acr122u_range_booster.py"
