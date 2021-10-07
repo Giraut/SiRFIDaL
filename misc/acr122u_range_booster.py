@@ -133,7 +133,7 @@ def main():
     return(-4)
 
   # Inform the user
-  print("ACR122U Rx gain set to {:01X}".format(new_rx_gain))
+  print("ACR122U Rx gain set to 0x{:01X}".format(new_rx_gain))
 
       
 
