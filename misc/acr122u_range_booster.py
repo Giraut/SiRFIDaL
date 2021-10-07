@@ -106,8 +106,7 @@ def main():
   try:
     fwrev = "".join([chr(v) for v in send_acr122u_control_command(
 		cmd_get_fw_revision, hcard)])
-  except Exception as e:
-    print(e)
+  except:
     print("Error getting ACR122U firmware revision number.")
     print("Is the CCID exchange command allowed in /etc/libccid_Info.plist")
     return(-2)
