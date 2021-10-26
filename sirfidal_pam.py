@@ -161,7 +161,7 @@ def main():
   # Make sure we never get stuck on an idle server
   sock.settimeout(wait_secs + 5)
 
-  endwait_tstamp=datetime.now().timestamp() + wait_secs
+  endwait=datetime.now().timestamp() + wait_secs
 
   # Send the authentication request to the server
   try:
