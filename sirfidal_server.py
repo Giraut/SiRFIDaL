@@ -2197,7 +2197,7 @@ def main():
   active_uids_prev=None
   auth_cache={}
   auth_uids_cache={}
-  send_active_uids_update=False
+  active_uids_update=False
   active_clients={}
 
   while True:
@@ -2251,7 +2251,7 @@ def main():
         if active_uids_new!=active_uids:
           active_uids_prev=active_uids
           active_uids=active_uids_new
-          send_active_uids_update=True
+          active_uids_update=True
 
       # New client notification from a client handler
       elif msg[0] == NEW_CLIENT:
@@ -2318,7 +2318,7 @@ def main():
 
     # Try to reload the encrypted UIDs file. If it needed reloading, or if the
     # list of active UIDs has changed, wipe the user authentication cache
-    if load_encruids() or send_active_uids_update:
+    if load_encruids() or active_uids_update:
       auth_cache={}
       auth_uids_cache={}
 
@@ -2334,8 +2334,8 @@ def main():
         # Request to watch the evolution of the number of active UIDs in
         # real-time: send an update if one is available
         if active_clients[cpid].request == WATCHNBUIDS_REQUEST and \
-		send_active_uids_update and active_uids_prev != None and \
-		 len(active_uids) != len(active_uids_prev):
+		active_uids_update and active_uids_prev != None and \
+		len(active_uids) != len(active_uids_prev):
           active_clients[cpid].main_out_p.send([NBUIDS_UPDATE, \
 		[len(active_uids), len(active_uids) - len(active_uids_prev)]])
 
@@ -2344,7 +2344,7 @@ def main():
         if active_clients[cpid].request == WATCHUIDS_REQUEST and \
 		active_uids_prev != None and \
 		(active_clients[cpid].new_request or \
-		(active_uids != active_uids_prev and send_active_uids_update)):
+		(active_uids != active_uids_prev and active_uids_update)):
           active_clients[cpid].main_out_p.send([UIDS_UPDATE, [active_uids]])
           active_clients[cpid].new_request=False
 
@@ -2376,19 +2376,22 @@ def main():
             auth_cache[active_clients[cpid].user]=auth
             auth_uids_cache[active_clients[cpid].user]=auth_uids
 
-        # Add user request: if we have exactly one active UID, associate it
-        # with the requested user
+        # Add user request: if we have an active UIDs update and exactly one
+        # more active UID in the new list of active UIDs, associate that new
+        # UID with the requested user
         elif active_clients[cpid].request == ADDUSER_REQUEST and \
-		len(active_uids)==1:
+		active_uids_update and \
+		len(active_uids) == len(active_uids_prev) + 1:
 
           new_encruids=encruids.copy()
 
           # Don't replace an existing user <-> UID association: if we find one,
           # notify the client handler and replace the request with a fresh void
           # request and associated timeout
+          new_active_uid = (set(active_uids) - set(active_uids_prev)).pop()
           for registered_user, registered_uid_encr in new_encruids:
             if registered_user == active_clients[cpid].user and crypt(
-			  active_uids[0],
+			  new_active_uid,
 			  registered_uid_encr
 			) == registered_uid_encr:
               active_clients[cpid].main_out_p.send([ENCRUIDS_UPDATE_ERR_EXISTS])
@@ -2404,7 +2407,7 @@ def main():
 
             new_encruids.append([
 		  active_clients[cpid].user,
-		  crypt(active_uids[0], mksalt())
+		  crypt(new_active_uid, mksalt())
 		])
             active_clients[cpid].main_out_p.send([ENCRUIDS_UPDATE,
 		new_encruids])
@@ -2412,20 +2415,26 @@ def main():
             active_clients[cpid].expires=msg_tstamp + \
 			client_force_close_socket_timeout
 
-        # Delete user request: if we have exactly one active UID, disassociate
+        # Delete user request: if we have an active UIDs update and exactly one
+        # more active UID in the new list of active UIDs, disassociate
         # any matching user <-> UID - unless we have no timeout, in which case
         # remove all user <-> UID associations matching the requested user
         elif active_clients[cpid].request == DELUSER_REQUEST and \
-		(active_clients[cpid].expires == None or len(active_uids)==1):
+		(active_clients[cpid].expires == None or (
+		active_uids_update and \
+		len(active_uids) == len(active_uids_prev) + 1)):
+
+          new_encruids=[]
 
           # Find one or more existing user <-> UID associations and remove
           # them if needed
           assoc_deleted=False
-          new_encruids=[]
+          new_active_uid = (set(active_uids) - set(active_uids_prev)).pop() \
+				if active_uids_update else ""
           for registered_user, registered_uid_encr in encruids:
             if registered_user == active_clients[cpid].user and (
 			active_clients[cpid].expires == None or crypt(
-			  active_uids[0],
+			  new_active_uid,
 			  registered_uid_encr
 			) == registered_uid_encr):
               assoc_deleted=True
@@ -2485,7 +2494,7 @@ def main():
 
     # Prevent duplicate active UIDs updates being sent to watcher clients
     if msg[0] != MAIN_PROCESS_KEEPALIVE:
-      send_active_uids_update=False
+      active_uids_update=False
 
 
 
