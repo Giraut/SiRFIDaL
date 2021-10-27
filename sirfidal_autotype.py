@@ -418,7 +418,16 @@ def main():
 
         for d in defsfile:
 
+          # Find a matching window in the definitions file
           if d[0]==wmclass[1] and d[1]==wmclass[0] and d[2]==wmname:
+
+            # Decrypt the encrypted string associated with the window
+            s=decrypt(d[3], auth_uid)
+
+            # If the decryption didn't succeed, try the next definition
+            if s==None:
+              new_defsfile.append(d)
+              continue
 
             if not defsfile_modified:
 
@@ -481,12 +490,12 @@ def main():
 
             if d[0]==wmclass[1] and d[1]==wmclass[0] and d[2]==wmname:
 
-              # Decrypt the encrypted string to type
+              # Decrypt the encrypted string associated with the window
               s=decrypt(d[3], auth_uid)
+
+              # If the decryption didn't succeed, try the next definition
               if s==None:
-                print("Error decrypting the string to type. Are you sure " \
-			"it was encoded with this UID?")
-                break
+                continue
 
               # "Type" the corresponding string
               if typer=="xdo":
