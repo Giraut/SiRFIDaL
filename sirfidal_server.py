@@ -28,12 +28,15 @@ The script performs the following functions:
     up to a requested time for a successful authentication
 
   - Add an authenticated user - i.e. associate a user with a single currently
-    active UID and save this association in the encrypted UIDs file
+    active UID and save this association in the encrypted UIDs file. Only root
+    or the user requesting the association for themselves may request it
 
   - Delete an authenticated user - i.e. disassociate a user from a single
-    currently active UID in the encrypted UIDs file
+    currently active UID in the encrypted UIDs file. Only root or the user
+    requesting the deletion for themselves may request it
 
-  - Delete all entries for a user in the encrypted UIDs file
+  - Delete all entries for a user in the encrypted UIDs file. Only root or the
+    user requesting the deletion for themselves may request it
 
   - Watch the evolution of the number of active UIDs in real-time: not an
     authentication-related function, but a way for requesting processes to
@@ -83,6 +86,7 @@ Server replies: TIMEOUT
                 EXISTS
                 WRITEERR
                 OK
+		NOAUTH
 
 Service:        Delete a user <-> UID association in the encrypted UIDs file
 Client sends:   DELUSER <user> <max wait (int or float) in s>
@@ -90,12 +94,14 @@ Server replies: TIMEOUT
                 NONE
                 WRITEERR
                 OK
+		NOAUTH
 
 Service:        Delete all entries in encrypted UIDs file matching a user
 Client sends:   DELUSER <user> -1
 Server replies: NONE
                 WRITEERR
                 OK
+		NOAUTH
 
 After a successful WAITAUTH request, if the requesting process owner is the
 the same as the user they request an authentication for (i.e. the user
@@ -279,12 +285,13 @@ WATCHUIDS_REQUEST              =20
 UIDS_UPDATE                    =21
 ADDUSER_REQUEST                =22
 DELUSER_REQUEST                =23
-ENCRUIDS_UPDATE                =24
+ENCRUIDS_UPDATE_OK             =24
 ENCRUIDS_UPDATE_ERR_EXISTS     =25
 ENCRUIDS_UPDATE_ERR_NONE       =26
 ENCRUIDS_UPDATE_ERR_TIMEOUT    =27
-CLIENT_HANDLER_STOP_REQUEST    =28
-CLIENT_HANDLER_STOP            =29
+ENCRUIDS_UPDATE_ERR_WRITE      =28
+CLIENT_HANDLER_STOP_REQUEST    =29
+CLIENT_HANDLER_STOP            =30
 
 
 
@@ -1808,17 +1815,11 @@ def client_handler(pid, uid, gid, pw_name,
 
   setproctitle("sirfidal_server_client_handler_{}".format(pid))
 
-  # Drop our privileges to that of the client, so we can't write to the
-  # encrypted file if the calling process can't either. Also set umask so
-  # that if we have to create the file as root, root will be able to read and
-  # write to it, users belonging to the right group will only be able to write
-  # (to add or delete UIDs without being able to read the encrypted file) and
-  # others may not access it in any way.
+  # Drop our privileges to that of the client
   try:
     os.setgroups(os.getgrouplist(pw_name, gid))
     os.setgid(gid)
     os.setuid(uid)
-    os.umask(0o057)
   except:
     return(0)
 
@@ -1901,28 +1902,35 @@ def client_handler(pid, uid, gid, pw_name,
           csendbuf="UIDS{}".format("".join([" " + s for s in msg[1][0]]))
           continue
 
-        # The main process reports a timeout waiting for a UID to associate
-        # or disassociate with a UID
-        elif msg[0]==ENCRUIDS_UPDATE_ERR_TIMEOUT:
-          csendbuf="TIMEOUT"
+        # The main process reports successfully updating the encrypted UIDs:
+        # notify the client
+        elif msg[0]==ENCRUIDS_UPDATE_OK:
+          csendbuf="OK"
           continue
 
-        # The main process reports an error updating the encryption UIDs
+        # The main process reports an error updating the encrypted UIDs
         # because the user <-> UID association already exists: notify the client
         elif msg[0]==ENCRUIDS_UPDATE_ERR_EXISTS:
           csendbuf="EXISTS"
           continue
 
-        # The main process reports an error updating the encryption UIDs
+        # The main process reports an error updating the encrypted UIDs
         # because it hasn't found any user <-> UID association to delete:
         # notify the client
         elif msg[0]==ENCRUIDS_UPDATE_ERR_NONE:
           csendbuf="NONE"
           continue
 
-        # The main process wants us to update the encryption UIDs file
-        elif msg[0]==ENCRUIDS_UPDATE:
-          csendbuf="OK" if write_encruids(msg[1]) else "WRITEERR"
+        # The main process reports a timeout waiting for a UID to associate
+        # or disassociate with a UID
+        elif msg[0]==ENCRUIDS_UPDATE_ERR_TIMEOUT:
+          csendbuf="TIMEOUT"
+          continue
+
+        # The main process reports an error writing the encrypted UIDs file:
+        # notify the client
+        elif msg[0]==ENCRUIDS_UPDATE_ERR_WRITE:
+          csendbuf="WRITEERR"
           continue
 
         # The main process reports a void request timeout (in other words, the
@@ -1993,17 +2001,28 @@ def client_handler(pid, uid, gid, pw_name,
               main_in_q.put([WAITAUTH_REQUEST, [pid, m[0][0], float(m[0][1])]])
 
             else:
-              # ADDUSER request
+              # ADDUSER request: the user must be root, or be the same user
+              # as the one for which a new association is requested. If not,
+              # deny the request
               m=re.findall("^ADDUSER\s([^\s]+)\s([-+]?[0-9]+\.?[0-9]*)$", l)
               if m:
-                main_in_q.put([ADDUSER_REQUEST, [pid, m[0][0], float(m[0][1])]])
+                if uid==0 or m[0][0]==pw_name:
+                  main_in_q.put([ADDUSER_REQUEST, [pid, m[0][0],
+							float(m[0][1])]])
+                else:
+                  csendbuf="NOAUTH"
 
               else:
-                # DELUSER request
+                # DELUSER request: the user must be root, or be the same user
+                # as the one for which a new association is requested. If not,
+                # deny the request
                 m=re.findall("^DELUSER\s([^\s]+)\s([-+]?[0-9]+\.?[0-9]*)$", l)
                 if m:
-                  main_in_q.put([DELUSER_REQUEST, [pid, m[0][0], \
-				float(m[0][1])]])
+                  if uid==0 or m[0][0]==pw_name:
+                    main_in_q.put([DELUSER_REQUEST, [pid, m[0][0],
+							float(m[0][1])]])
+                  else:
+                    csendbuf="NOAUTH"
 
 
 
@@ -2141,6 +2160,12 @@ def main():
   os.chmod(socket_path, 0o666)
 
   sock.listen(max_server_connections)
+
+  # Set the umask so that if we have to create the encrypted UIDs file, only
+  # root can read or write to it
+  os.umask(0o077)
+
+
 
   # Start the server
   Process(target=server, args=(main_in_q, sock,)).start()
@@ -2369,7 +2394,7 @@ def main():
                   auth_uids.append(uid)	#...with this UID
 
             # Cache the result of this authentication - valid as long as the
-            # list of active UIDs doesn't change and the encrypted IDs file
+            # list of active UIDs doesn't change and the encrypted UIDs file
             # isn't reloaded - to avoid calling crypt() each time a requesting
             # process asks an authentication and nothing has changed since the
             # previous request
@@ -2400,17 +2425,19 @@ def main():
 			client_force_close_socket_timeout
               break;
 
-          # Encrypt and associate the UID with the user, send the updated
-          # encrypted UIDs to the client handler and replace the request with a
-          # fresh void request and associated timeout
+          # Encrypt and associate the UID with the user, write the new
+          # encrypted UIDs file and replace the request with fresh void request
+          # and associated timeout
           if active_clients[cpid].request!=VOID_REQUEST:
 
             new_encruids.append([
 		  active_clients[cpid].user,
 		  crypt(new_active_uid, mksalt())
 		])
-            active_clients[cpid].main_out_p.send([ENCRUIDS_UPDATE,
-		new_encruids])
+            if write_encruids(new_encruids):
+              active_clients[cpid].main_out_p.send([ENCRUIDS_UPDATE_OK])
+            else:
+              active_clients[cpid].main_out_p.send([ENCRUIDS_UPDATE_ERR_WRITE])
             active_clients[cpid].request=VOID_REQUEST
             active_clients[cpid].expires=msg_tstamp + \
 			client_force_close_socket_timeout
@@ -2441,13 +2468,15 @@ def main():
             else:
               new_encruids.append([registered_user, registered_uid_encr])
 
-          # If we found one or more associations to delete, send the updated
-          # encrypted UIDs to the client handler. Otherwise notify the client.
-          # Then replace the request with a fresh void request and associated
+          # If we found one or more associations to delete, write the new
+          # encrypted UIDs file. Otherwise notify the client. Then replace the
+          # request with a fresh void request and associated
           # timeout
           if assoc_deleted:
-            active_clients[cpid].main_out_p.send([ENCRUIDS_UPDATE,
-		new_encruids])
+            if write_encruids(new_encruids):
+              active_clients[cpid].main_out_p.send([ENCRUIDS_UPDATE_OK])
+            else:
+              active_clients[cpid].main_out_p.send([ENCRUIDS_UPDATE_ERR_WRITE])
           else:
             active_clients[cpid].main_out_p.send([ENCRUIDS_UPDATE_ERR_NONE])
 

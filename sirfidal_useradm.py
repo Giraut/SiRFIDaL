@@ -5,16 +5,9 @@ This script is a SiRFIDaL client. It forwards requests to associate a user with
 a UID and add it to the authorized users, remove a user <-> UID association, or
 remove all associations for a user to the SiRFIDaL server.
 
-Note that the server reads the encrypted UIDs file as root, but writes
-modifications to it as the user of the client. As a result, the user needs
-to have write access to the file to be able to add or delete a user (but not
-read access).
-
-This is useful if you want trusted non-root users (administrators) to be able
-to administer SiRFIDaL authorized users and UIDs: the encrypted UIDs file and
-the trusted users only have to belong to the same group (wheel for example)
-and the encrypted UIDs file should have write-only access permission set for
-that group.
+Only root may assocate / disassociate a user and a UID, or a non-root user for
+themselves. If no username is supplied after -a, -d or -D, the current username
+is used.
 """
 
 ### Parameters
@@ -26,6 +19,7 @@ socket_path="/tmp/sirfidal_server.socket"
 ### Modules
 import os
 import sys
+import pwd
 import argparse
 from socket import socket, timeout, AF_UNIX, SOCK_STREAM, SOL_SOCKET, \
 		SO_PASSCRED
@@ -37,22 +31,31 @@ def main():
   """Main routine
   """
 
+  # Get the current username
+  pw_name=pwd.getpwuid(os.getuid()).pw_name
+
   # Read the command line arguments
   argparser=argparse.ArgumentParser()
   mutexargs=argparser.add_mutually_exclusive_group(required=True)
   mutexargs.add_argument(
 	  "-a", "--adduser",
 	  type=str,
+          nargs="?",
+          const=pw_name,
 	  help="Associate a user with a NFC / RFID UID"
 	)
   mutexargs.add_argument(
 	  "-d", "--deluser",
 	  type=str,
+          nargs="?",
+          const=pw_name,
 	  help="Disassociate a user from a NFC / RFID UID"
 	)
   mutexargs.add_argument(
 	  "-D", "--delalluser",
 	  type=str,
+          nargs="?",
+          const=pw_name,
 	  help="Remove all NFC / RFID UID association for a user"
 	)
   args=argparser.parse_args()
@@ -124,11 +127,13 @@ def main():
   unknown_server_reply=True
 
   if args.adduser:
+
     if server_reply=="OK":
       unknown_server_reply=False
       print("User {} successfully associated with this UID".format(
 		args.adduser))
       return(0)
+
     elif server_reply=="EXISTS":
       unknown_server_reply=False
       print("Error: user {} already associated with this UID".format(
@@ -136,42 +141,51 @@ def main():
       return(-6)
 
   elif args.deluser:
+
     if server_reply=="OK":
       unknown_server_reply=False
       print("User {} successfully disassociated from this UID".format(
 		args.deluser))
       return(0)
+
     elif server_reply=="NONE":
       unknown_server_reply=False
       print("Error: user {} was not associated with this UID".format(
 		args.deluser))
-      return(-6)
+      return(-7)
 
   elif args.delalluser:
+
     if server_reply=="OK":
       unknown_server_reply=False
       print("All UID associations successfully deleted for user {}".format(
 		args.delalluser))
       return(0)
+
     elif server_reply=="NONE":
       unknown_server_reply=False
       print("Error: user {} was not associated with any UID".format(
 		args.delalluser))
-      return(-6)
+      return(-8)
 
-  if server_reply=="WRITEERR":
+  if server_reply=="NOAUTH":
     unknown_server_reply=False
-    print("Error writing the encrypted UIDs file. " \
-		"Do you have write permission?")
-    return(-6)
+    print("Error: you are not authorized to perform this operation")
+    return(-9)
+
+  elif server_reply=="WRITEERR":
+    unknown_server_reply=False
+    print("Error: the server cannot write the encrypted UIDs file")
+    return(-10)
+
   elif server_reply=="TIMEOUT":
     unknown_server_reply=False
     print("Error: timeout waiting for UID")
-    return(-6)
+    return(-11)
 
   if unknown_server_reply:
     print("Unknown server reply: {}".format(server_reply))
-    return(-7)
+    return(-12)
 
 
 
