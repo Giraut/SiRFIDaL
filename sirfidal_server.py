@@ -1970,12 +1970,12 @@ def main():
   reader_params_check_params = {
 
       # USB PC/SC readers
-    "pcsc_readers":	{
+    "pcsc":	{
       "poll_every":	((int, float), lambda v: v > 0)
     },
 
     # Serial reader
-    "serial_reader_#1":	{
+    "serial":	{
       "device":		((str,), lambda v: v != ""),
       "baudrate":	((int,), lambda v: v > 0),
       "bytesize":	((int,), lambda v: v in (7, 8)),
@@ -1984,18 +1984,18 @@ def main():
     },
 
     # HID reader
-    "keyboard_wedge_#1":	{
+    "hid":	{
       "device":		((str,), lambda v: v != "")
     },
 
     # Android device used as an NFC reader through ADB
-    "android_device_#1":	{
+    "android":	{
       "client":		((str,), lambda v: v != ""),
       "logcat_prefix":	((str,), lambda v: v != "")
     },
 
     # Proxmark3
-    "proxmark3_#1":	{
+    "proxmark3":	{
       "device":		((str,), lambda v: v != ""),
       "client":		((str,), lambda v: v != ""),
       "client_workdir":	((str,), lambda v: v != ""),
@@ -2009,12 +2009,12 @@ def main():
     },
 
     # Chameleon Mini / Tiny
-    "chameleon_#1":	{
+    "chameleon":	{
       "device":		((str,), lambda v: v != "")
     },
 
     # uFR or uFR Nano Online in slave mode
-    "ufr_nano_#1":	{
+    "ufr":	{
       "device":		((str,), lambda v: v != ""),
       "poll_every":	((type(None), int, float), lambda v: v is None or v >0),
       "poll_powersave":	((bool,), None),
@@ -2026,7 +2026,7 @@ def main():
     },
 
     # HTTP server getting UIDs using the GET or POST method
-    "http_server_#1":	{
+    "http":	{
       "bind_address":	((str,), None),
       "bind_port":	((int,), lambda v: v > 0),
       "get_data_fmt":	((type(None), str), lambda v: v is None or v != ""),
@@ -2036,7 +2036,7 @@ def main():
     },
 
     # TCP client getting UIDs from a TCP server
-    "tcp_client_#1":	{
+    "tcp":	{
       "server_address":	((str,), lambda v: v != ""),
       "server_port":	((int,), lambda v: v > 0),
       "tcp_keepalive":	((type(None), int, float), lambda v: v is None or v > 0)
@@ -2051,7 +2051,7 @@ def main():
   enabled_listeners = {}
 
   for name in readers:
-
+    print(name)
     if not name.isprintable():
       print("Error: invalid reader name {}. Giving up.".format(name))
       return -1
@@ -2070,7 +2070,9 @@ def main():
 		.format(r, name))
         return -1
 
-      enabled_listeners[name] = globals()[readers[name]["type"] + "_listener"]
+      reader_type = readers[name]["type"]
+
+      enabled_listeners[name] = globals()[reader_type + "_listener"]
 
       r = param_check(readers[name], "uids_timeout", (type(None), int, float),
 			lambda v: v is None or v > 0)
@@ -2079,16 +2081,16 @@ def main():
 		.format(r, name))
         return -1
 
-      for p in reader_params_check_params[name]:
+      for p in reader_params_check_params[reader_type]:
         r = param_check(readers[name], p,
-			reader_params_check_params[name][p][0],
-			reader_params_check_params[name][p][1])
+			reader_params_check_params[reader_type][p][0],
+			reader_params_check_params[reader_type][p][1])
         if r:
           print("Error: {} in declaration of reader {}. Giving up."
 		.format(r, name))
           return -1
 
-      if readers[name]["type"] == "proxmark3":
+      if reader_type == "proxmark3":
 
         pm3_logfile = os.path.join(readers[name]["client_workdir"],
 					"proxmark3.log")
