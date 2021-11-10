@@ -8,11 +8,11 @@ The script performs the following functions:
 
 * Background functions
 
-  - Handle reading RFID / NFC UIDs from different connected readers: several
-    PC/SC readers, a single serial reader, a single HID reader, an Android
-    device used as an external NFC reader, a Proxmark3 reader, a
-    Chameleon Mini / Tiny, a uFR / uFR Nano Online in slave mode
-    may be watched concurrently
+  - Handle reading RFID / NFC UIDs from different connected readers: one or more
+    PC/SC readers, serial readers, HID readers, Android devices used as
+    external NFC readers, Proxmark3 readers, Chameleon Mini / Tiny,
+    uFR / uFR Nano Online in slave mode, readers reporting UIDs using HTTP
+    GET or POST or TCP readers may be watched concurrently
 
   - Internally maintain a list of of currently active UIDs - that is, the list
     of UIDs of RFID or NFC transponders currently readable by the readers at
@@ -127,103 +127,133 @@ See the parameters below to configure this script.
 ### Parameters
 # Alternative configuration file: if you want to keep part or all of the
 # parameters below defined separately, declare them in this file
-config_file     ="/etc/sirfidal_server_parameters.py"
+config_file = "/etc/sirfidal_server_parameters.py"
 
-# Types of RFID / NFC readers to watch
-watch_pcsc      =True
-watch_serial    =False
-watch_hid       =False
-watch_adb       =False	# Android device used as an external NFC reader
-watch_pm3       =False	# Proxmark3 reader used as a "dumb" UID reader
-watch_chameleon =False	# Chameleon Mini / Tiny used as an external NFC reader
-watch_ufr       =False	# uFR or uFR Nano Online reader in slave mode
-watch_http      =False	# HTTP server getting UIDs using the GET or POST method
-watch_tcp       =False	# TCP client getting UIDs from a TCP server
+# List of readers managed by the server, and associated parameters
+readers = {
 
-# PC/SC parameters
-pcsc_read_every=0.2 #s
+  # USB PC/SC readers
+  "pcsc_readers":	{
+    "enabled":		True,
+    "type":		"pcsc",
+    "uids_timeout":	None, # as PC/SC readers are polled
+    "poll_every":	0.2 #s
+  },
 
-# Serial parameters
-serial_read_every=0.2 #s
-serial_reader_dev_file="/dev/ttyUSB0"
-serial_baudrate=9600
-serial_uid_not_sent_inactive_timeout=1 #s
+  # Serial reader
+  "serial_reader_#1":	{
+    "enabled":		False,
+    "type":		"serial",
+    "uids_timeout":	1, #s
+    "device":		"/dev/ttyUSB0",
+    "baudrate":		9600,
+    "bytesize":		8,
+    "parity":		"N",
+    "stopbits":		1
+  },
 
-# HID parameters
-hid_read_every=0.2 #s
-hid_reader_dev_file="/dev/input/by-id/"	\
-			"usb-ACS_ACR1281_Dual_Reader-if01-event-kbd"
-hid_simulate_uid_stays_active=1 #s
+  # HID reader
+  "keyboard_wedge_#1":	{
+    "enabled":		False,
+    "type":		"hid",
+    "uids_timeout":	1, #s
+    "device":           "/dev/input/by-id/"
+				"usb-ACS_ACR1281_Dual_Reader-if01-event-kbd"
+  },
 
-# ADB parameters
-adb_read_every=0.2 #s
-adb_client="/usr/bin/adb"
-adb_nfcuid_log_prefix="nfcuid:"
-adb_persistent_mode=True
-adb_uid_timeout_in_non_persistent_mode=1 #s
+  # Android device used as an NFC reader through ADB
+  "android_device_#1":	{
+    "enabled":		False,
+    "type":		"android",
+    "uids_timeout":	None, #s for one-shot mode, None for persistent mode
+    "client":		"/usr/bin/adb",
+    "logcat_prefix":	"nfcuid:"
+  },
 
-# Proxmark3 parameters
-pm3_read_every=0.2 #s
-pm3_reader_dev_file="/dev/ttyACM0"
-pm3_client="/usr/local/bin/proxmark3"
-pm3_client_workdir="/tmp"
-pm3_client_comm_timeout=2 #s
-pm3_read_iso14443a =True
-pm3_read_iso15693  =False
-pm3_read_em410x    =False
-pm3_read_indala    =False
-pm3_read_fdx       =False
+  # Proxmark3
+  "proxmark3_#1":	{
+    "enabled":		False,
+    "type":		"proxmark3",
+    "uids_timeout":	None, # as the PM3 reader is polled
+    "device":		"/dev/ttyACM0",
+    "client":		"/usr/local/bin/proxmark3",
+    "client_workdir":	"/tmp",
+    "client_timeout":	2, #s
+    "read_iso14443a":	True,
+    "read_iso15693":	False,
+    "read_em410x":	False,
+    "read_indala":	False,
+    "read_fdx":		False,
+    "poll_throttle":	0.5 #s
+  },
 
-# Chameleon Mini / Tiny parameters
-chameleon_read_every=0.2 #s
-chameleon_dev_file="/dev/ttyACM0"
-chameleon_client_comm_timeout=2 #s
-chameleon_uid_not_sent_inactive_timeout=1 #s
+  # Chameleon Mini / Tiny
+  "chameleon_#1":	{
+    "enabled":		False,
+    "type":		"chameleon",
+    "uids_timeout":	1, #s
+    "device":		"/dev/ttyACM1",
+  },
 
-# uFR or uFR Nano Online in slave mode
-ufr_read_every=0.5 #s
-ufr_device="tcp://ufr:8881"
-ufr_polled_mode=False		# Polled or asynchronous ID sending mode
-ufr_polled_power_saving=False	# uFR firmware > v5.0.51 required
-ufr_debounce_delay=0.2 #s
-ufr_no_rgb1=(255, 160, 0)	# For Nano Online, LED1 color
-ufr_no_rgb2_tag_off=(160, 0, 0)	# For Nano Online, LED2 color if no card present
-ufr_no_rgb2_tag_on=(0, 160, 0)	# For Nano Online, LED2 color if card present
-ufr_device_check_every=10 #s
+  # uFR or uFR Nano Online in slave mode
+  "ufr_nano_#1":	{
+    "enabled":		False,
+    "type":		"ufr",
+    "uids_timeout":	None, # as the uFR reader is polled or asynchronous
+    "device":		"tcp://ufr:8881",
+    "poll_every":	None, #s for polled mode, None for asynchronous mode
+    "poll_powersave":	True,	# uFR firmware > v5.0.51 required
+    "debounce_delay":	0.2, #s
+    "no_rgb1":		(255, 160, 0),	# Nano Online, LED1 color
+    "no_rgb2_on":	(0, 160, 0),	# Nano Online, LED2 color if tag present
+    "no_rgb2_off":	(160, 0, 0),	# Nano Online, LED2 color if no tag
+    "conn_watchdog":	10 #s - Only in asynchronous ID sending mode
+  },
 
-# HTTP server getting UIDs using the GET or POST method
-http_read_every=0.2 #s
-http_server_address=""
-http_server_port=30080
-http_get_data_format="^.*data=%02([0-9A-F]+)%0D%0A%03$"	# None to disable GET
-http_get_reply="OK"
-http_post_data_format="^.*UID=([0-9a-fA-F:]+).*$"	# None to disable POST
-http_post_reply=""
-http_uid_not_sent_inactive_timeout=1 #s
+  # HTTP server getting UIDs using the GET or POST method
+  "http_server_#1":	{
+    "enabled":		False,
+    "type":		"http",
+    "uids_timeout":	1, #s
+    "bind_address":	"",
+    "bind_port":	30080,
+    "get_data_fmt":	"^.*data=%02([0-9A-F]+)%0D%0A%03$", # None disables GET
+    "get_reply":	"OK",
+    "post_data_fmt":	"^.*UID=([0-9a-fA-F:]+).*$", # None disables POST
+    "post_reply":	""
+  },
 
-# TCP client getting UIDs from a TCP server
-tcp_read_every=0.2 #s
-tcp_server_address=""
-tcp_server_port=8080
-tcp_connect_timeout=5
-tcp_keepalive=5 #s - None to disable
-tcp_uid_not_sent_inactive_timeout=1 #s
+  # TCP client getting UIDs from a TCP server
+  "tcp_client_#1":	{
+    "enabled":		False,
+    "type":		"tcp",
+    "uids_timeout":	1, #s
+    "server_address":	"localhost",
+    "server_port":	8080,
+    "tcp_keepalive":	5 #s - None to disable
+  }
+}
+
+
 
 # Server parameters
-max_server_connections=10
-max_auth_request_wait=60 #s
-client_force_close_socket_timeout=60 #s
-socket_path="/tmp/sirfidal_server.socket"
+socket_path = "/tmp/sirfidal_server.socket"
+max_server_connections = 15
+max_auth_request_wait = 60 #s
+client_force_close_socket_timeout = 60 #s
 
 # Encrypted UIDs file path
-encrypted_uids_file="/etc/sirfidal_encr_uids"
+encrypted_uids_file = "/etc/sirfidal_encr_uids"
 
-# Optional UID translation table, for special UIDs
+# Optional UID translation table for special UIDs: any UID in the keys of this
+# dictionary will be translated internally into the corresponding value, as if
+# the reader had read the value in the first place. Useful for special tags
+# that report two UIDs
 uids_translation_table = {}
 
 # Names of disallowed parent process names for requesting processes. This is a
 # very weak security check, but we leave it there just in case
-remote_user_parent_process_names=["sshd", "telnetd"]
+remote_user_parent_process_names = ("sshd", "telnetd")
 
 
 
@@ -244,11 +274,11 @@ import pwd
 import json
 import struct
 import psutil
-from time import sleep
+import inspect
 from pty import openpty
 from select import select
+from time import time, sleep
 from string import hexdigits
-from datetime import datetime
 from crypt import crypt, mksalt
 from signal import signal, SIGCHLD
 from setproctitle import setproctitle
@@ -261,43 +291,34 @@ from socket import socket, timeout, AF_UNIX, SOCK_STREAM, SOL_SOCKET, \
 
 
 ### Defines
-MAIN_PROCESS_KEEPALIVE         =0
-PCSC_LISTENER_UIDS_UPDATE      =1
-SERIAL_LISTENER_UIDS_UPDATE    =2
-HID_LISTENER_UIDS_UPDATE       =3
-ADB_LISTENER_UIDS_UPDATE       =4
-PM3_LISTENER_UIDS_UPDATE       =5
-CHAMELEON_LISTENER_UIDS_UPDATE =6
-UFR_LISTENER_UIDS_UPDATE       =7
-HTTP_LISTENER_UIDS_UPDATE      =8
-TCP_LISTENER_UIDS_UPDATE       =9
-NEW_CLIENT                     =10
-NEW_CLIENT_ACK                 =11
-VOID_REQUEST                   =12
-VOID_REQUEST_TIMEOUT           =13
-WAITAUTH_REQUEST               =14
-AUTH_RESULT                    =15
-AUTH_OK                        =16
-AUTH_NOK                       =17
-WATCHNBUIDS_REQUEST            =18
-NBUIDS_UPDATE                  =19
-WATCHUIDS_REQUEST              =20
-UIDS_UPDATE                    =21
-ADDUSER_REQUEST                =22
-DELUSER_REQUEST                =23
-ENCRUIDS_UPDATE_OK             =24
-ENCRUIDS_UPDATE_ERR_EXISTS     =25
-ENCRUIDS_UPDATE_ERR_NONE       =26
-ENCRUIDS_UPDATE_ERR_TIMEOUT    =27
-ENCRUIDS_UPDATE_ERR_WRITE      =28
-CLIENT_HANDLER_STOP_REQUEST    =29
-CLIENT_HANDLER_STOP            =30
+LISTENER_UIDS_UPDATE        = 0
+NEW_CLIENT                  = 1
+NEW_CLIENT_ACK              = 2
+VOID_REQUEST                = 3
+VOID_REQUEST_TIMEOUT        = 4
+WAITAUTH_REQUEST            = 5
+AUTH_RESULT                 = 6
+AUTH_OK                     = 7
+AUTH_NOK                    = 8
+WATCHNBUIDS_REQUEST         = 9
+NBUIDS_UPDATE               = 10
+WATCHUIDS_REQUEST           = 11
+UIDS_UPDATE                 = 12
+ADDUSER_REQUEST             = 13
+DELUSER_REQUEST             = 14
+ENCRUIDS_UPDATE_OK          = 15
+ENCRUIDS_UPDATE_ERR_EXISTS  = 16
+ENCRUIDS_UPDATE_ERR_NONE    = 17
+ENCRUIDS_UPDATE_ERR_TIMEOUT = 18
+ENCRUIDS_UPDATE_ERR_WRITE   = 19
+CLIENT_HANDLER_STOP_REQUEST = 20
+CLIENT_HANDLER_STOP         = 21
 
 
 
 ### Global variables
-encruids_file_mtime=None
-encruids=[]
+encruids_file_mtime =  None
+encruids = []
 
 
 
@@ -308,273 +329,236 @@ class client:
 
   def __init__(self):
 
-    self.pw_name=None
-    self.main_out_p=None
-    self.request=None
-    self.user=None
-    self.expires=None
-    self.new_request=True
+    self.pw_name = None
+    self.main_out_p = None
+    self.request = None
+    self.user = None
+    self.expires = None
+    self.new_request = True
 
 
 
 ### subroutines / subprocesses
-def pcsc_listener(main_in_q):
-  """Periodically read the UIDs from one or several PC/SC readers and send the
+def pcsc_listener(main_in_q, listener_id, params):
+  """Periodically read the UIDs from one or more PC/SC readers and send the
   list of active UIDs to the main process
   """
 
   # Modules
   import smartcard.scard as sc
 
-  setproctitle("sirfidal_server_pcsc_listener")
+  setproctitle("sirfidal_listener_{}".format(listener_id))
 
-  # Wait for the status on the connected PC/SC readers to change and Get the
+  # Parameters
+  poll_every = params["poll_every"]
+
+  # Wait for the status on the connected PC/SC readers to change and get the
   # list of active PC/SC UIDs when it does
-  readers_prev=None
-  hcontext=None
-  send_initial_update=True
+  readers_prev = None
+  hcontext = None
 
   while True:
 
-    active_uids=[]
+    active_uids = []
+    poll_start_tstamp = time()
 
     # Wait on a PC/SC card's status change
-    readers=[]
+    readers = []
 
     if not hcontext:
+
       r, hcontext = sc.SCardEstablishContext(sc.SCARD_SCOPE_USER)
 
-      if r!=sc.SCARD_S_SUCCESS:
+      if r != sc.SCARD_S_SUCCESS:
         del(hcontext)
-        hcontext=None
+        hcontext = None
 
     if hcontext:
+
       _, readers = sc.SCardListReaders(hcontext, [])
 
       if not readers:
         sc.SCardReleaseContext(hcontext)
         del(hcontext)
-        hcontext=None
+        hcontext = None
 
-    if readers and readers_prev!=readers:
+    if readers and readers_prev != readers:
 
-      rs=[]
-      readers_prev=readers
+      rs = []
+      readers_prev = readers
+
       for i in range(len(readers)):
-        rs+=[(readers[i], sc.SCARD_STATE_UNAWARE)]
+        rs += [(readers[i], sc.SCARD_STATE_UNAWARE)]
 
       try:
         _, rs = sc.SCardGetStatusChange(hcontext, 0, rs)
+
       except KeyboardInterrupt:
-        return(-1)
+        return -1
+
       except:
         sc.SCardReleaseContext(hcontext)
         del(hcontext)
-        hcontext=None
-        readers=[]
+        hcontext = None
+        readers = []
 
     if readers:
 
       try:
-        rv, rs = sc.SCardGetStatusChange(hcontext, int(pcsc_read_every * 1000),
-					 rs)
+        rv, rs = sc.SCardGetStatusChange(hcontext, int(poll_every * 1000), rs)
+
       except KeyboardInterrupt:
-        return(-1)
+        return -1
+
       except:
-        sc.SCardReleaseContext(hcontext)
         del(hcontext)
-        hcontext=None
-        readers=[]
-
-    if not readers:
-      sleep(pcsc_read_every)
-      continue
-
-    # Send a keepalive message to the main process so it can trigger timeouts
-    main_in_q.put([MAIN_PROCESS_KEEPALIVE])
+        hcontext = None
+        readers = []
 
     # If a card's status has changed, re-read all the UIDs
-    if rv==sc.SCARD_S_SUCCESS or send_initial_update:
-
+    if readers and rv == sc.SCARD_S_SUCCESS:
       for reader in readers:
-
         try:
+          hresult, hcard, dwActiveProtocol = sc.SCardConnect(hcontext,
+				reader,
+				sc.SCARD_SHARE_SHARED,
+				sc.SCARD_PROTOCOL_T0 | sc.SCARD_PROTOCOL_T1)
+          hresult, response = sc.SCardTransmit(hcard,
+						dwActiveProtocol,
+						[0xFF, 0xCA, 0x00, 0x00, 0x00])
 
-          hresult, hcard, dwActiveProtocol = sc.SCardConnect(
-		  hcontext,
-		  reader,
-		  sc.SCARD_SHARE_SHARED,
-		  sc.SCARD_PROTOCOL_T0 | sc.SCARD_PROTOCOL_T1
-		)
-          hresult, response = sc.SCardTransmit(
-		  hcard,
-		  dwActiveProtocol,
-		  [0xFF, 0xCA, 0x00, 0x00, 0x00]
-		)
+          uid = "".join("{:02X}".format(b) for b in response)
 
-          uid="".join("{:02X}".format(b) for b in response)
-
-          if uid[-4:]=="9000":
-            uid=uid[:-4]
+          if uid[-4:] == "9000":
+            uid = uid[:-4]
 
           if uid:
             active_uids.append(uid)
 
         except KeyboardInterrupt:
-          return(-1)
+          return -1
+
         except:
           pass
 
-      # Send the list to the main process
-      main_in_q.put([PCSC_LISTENER_UIDS_UPDATE, active_uids])
+      # Send the list of active UIDs to the main process
+      main_in_q.put((LISTENER_UIDS_UPDATE, (listener_id, active_uids)))
 
-      send_initial_update=False
+    # Sleep long enough to meet the required polling rate
+    sleep(max(0, poll_every - time() + poll_start_tstamp))
 
 
 
-def serial_listener(main_in_q):
-  """Periodically read the UIDs from a single serial reader and send the list
-  of active UIDs to the main process. The reader must be a repeating reader -
-  i.e. one that sends the UIDs of the active transponders repeatedly as long as
-  they're readable, not just once when they're first read.
+def serial_listener(main_in_q, listener_id, params):
+  """Read UIDs from a serial reader and send the list of active UIDs to the
+  main process. The reader may be a repeating reader - i.e. one that sends the
+  UIDs of the active transponders repeatedly as long as they remain readable  -
+  or a single-shot reader that sends the UIDs only once upon first reading. The
+  UIDs timeout parameter should be slightly higher than the refresh rate of the
+  former, and however long is appropriate for the considered application with
+  the latter.
   """
 
   # Modules
-  from serial import Serial
+  import serial
 
-  setproctitle("sirfidal_server_serial_listener")
+  setproctitle("sirfidal_listener_{}".format(listener_id))
 
-  recvbuf=""
+  # Parameters
+  device = params["device"]
+  baudrate = params["baudrate"]
+  bytesize = (serial.FIVEBITS, serial.SIXBITS,
+		serial.SEVENBITS, serial.EIGHTBITS)[params["bytesize"] - 5]
+  parity = {"N": serial.PARITY_NONE, "E": serial.PARITY_EVEN,
+		"O": serial.PARITY_ODD, "M": serial.PARITY_MARK,
+		"S": serial.PARITY_SPACE}[params["parity"]]
+  stopbits = {1: serial.STOPBITS_ONE, 1.5: serial.STOPBITS_ONE_POINT_FIVE,
+		2: serial.STOPBITS_TWO}[params["stopbits"]]
 
-  uid_lastseens={}
+  uid = ""
+  serdev = None
 
-  serdev=None
-  send_active_uids_update=True
+  close_device = False
 
   while True:
 
-    # Open the reader's device file if it's closed
-    if not serdev:
-      try:
-        serdev=Serial(serial_reader_dev_file, serial_baudrate, timeout=0)
-      except KeyboardInterrupt:
-        return(-1)
-      except:
-        serdev=None
-
-    if not serdev:
-      sleep(2)	# Wait a bit to reopen the device
-      continue
-
-    # Read UIDs from the reader
-    rlines=[]
-    b=""
-    try:
-
-      if(select([serdev.fileno()], [], [], serial_read_every)[0]):
-
-        try:
-
-          b=os.read(serdev.fileno(), 256).decode("ascii")
-
-        except KeyboardInterrupt:
-          return(-1)
-        except:
-          b=""
-
-        if not b:
-          try:
-            serdev.close()
-          except:
-            pass
-          serdev=None
-          sleep(2)	# Wait a bit to reopen the device
-          continue
-
-
-        # Split the data into lines
-        for c in b:
-
-          if c=="\n" or c=="\r":
-            rlines.append(recvbuf)
-            recvbuf=""
-
-          elif len(recvbuf)<256 and c.isprintable():
-            recvbuf+=c
-
-    except KeyboardInterrupt:
-      return(-1)
-    except:
+    # Close the serial device if needed
+    if close_device:
       try:
         serdev.close()
       except:
         pass
-      serdev=None
+      serdev = None
+      sleep(2)	# Wait a bit to reopen the device
+
+      close_device = False
+
+    # Open the serial device
+    if serdev is None:
+      try:
+        serdev = serial.Serial(port = device,
+				baudrate = baudrate,
+				bytesize = bytesize,
+				parity = parity,
+				stopbits = stopbits,
+				timeout = None)
+
+      except KeyboardInterrupt:
+        return -1
+
+      except:
+        serdev = None
+
+    if serdev is None:
       sleep(2)	# Wait a bit to reopen the device
       continue
 
-    tstamp=int(datetime.now().timestamp())
+    # Read UIDs from the reader
+    try:
+      c = serdev.read(1).decode("ascii")
 
-    # Process the lines from the device
-    for l in rlines:
+    except KeyboardInterrupt:
+      return -1
 
-      # Strip anything not hexadecimal out of the UID and uppercase it,
-      # so it has a chance to be compatible with UIDs read by the other
-      # listeners
-      uid="".join([c for c in l.upper() if c in hexdigits])
+    except:
+      c = ""
 
-      # If we got a UID, add or update its timestamp in the last-seen list
+    if not c:
+      close_device = True
+      continue
+
+    if c in "\r\n":
       if uid:
-        if uid not in uid_lastseens:
-          send_active_uids_update=True
-        uid_lastseens[uid]=tstamp
+        main_in_q.put((LISTENER_UIDS_UPDATE, (listener_id, (uid,))))
+        uid = ""
 
-    # Remove UID timestamps that are too old from the last-seen list
-    for uid in list(uid_lastseens):
-      if tstamp - uid_lastseens[uid] > serial_uid_not_sent_inactive_timeout:
-        del uid_lastseens[uid]
-        send_active_uids_update=True
-
-    # If the active UIDs have changed...
-    if send_active_uids_update:
-
-      # ...send the list to the main process...
-      main_in_q.put([SERIAL_LISTENER_UIDS_UPDATE, list(uid_lastseens)])
-      send_active_uids_update=False
-
-    else:
-
-      # ...else send a keepalive message to the main process so it can trigger
-      # timeouts
-      main_in_q.put([MAIN_PROCESS_KEEPALIVE])
+    elif c in hexdigits and len(uid) < 256:
+      uid += c.upper()
 
 
 
-def hid_listener(main_in_q):
+def hid_listener(main_in_q, listener_id, params):
   """Read UIDs from a single HID reader (aka a "keyboard wedge") and send the
   list of active UIDs to the main process.
 
-  Sadly, almost all keyboard wedges are one-shot and not repeating readers,
-  i.e. they only send the UID once upon scanning. This routine simulates the
-  presence of a transponder in the list of active UIDs for a certain period of
-  time, then simulates its getting inactive. There is no way to assess the
-  presence of a transponder on those readers, so that's the best we can do.
-  However, that means client applications that depend on being able to assess
-  continued authentication of a UID will not work correctly.
+  Sadly, almost all keyboard wedges are one-shot readers, so the UIDs timeout
+  parameter should be whatever appropriate time the UIDs should stay active
+  for for the considered application.
   """
 
   # Modules
   from evdev import InputDevice, categorize, ecodes
 
-  setproctitle("sirfidal_server_hid_listener")
+  setproctitle("sirfidal_listener_{}".format(listener_id))
 
-  active_uid_expires={}
+  # Parameters
+  device = params["device"]
 
-  SC_LSHIFT=42
-  SC_RSHIFT=54
-  SC_ENTER=28
-  KEYUP=0
-  KEYDOWN=1
+  SC_LSHIFT = 42
+  SC_RSHIFT = 54
+  SC_ENTER  = 28
+  KEYUP     = 0
+  KEYDOWN   = 1
 
   scancodes_us_kbd={
       2: ["1", "!"],  3: ["2", "@"],  4: ["3", "#"],  5: ["4", "$"],
@@ -591,269 +575,204 @@ def hid_listener(main_in_q):
      51: [",", "<"], 52: [".", ">"], 53: ["/", "?"], 57: [" ", " "],
   }
 
-  recvbuf=""
+  shifted = 0
 
-  shifted=0
+  uid = ""
+  hiddev = None
 
-  hiddev=None
-  send_active_uids_update=True
+  close_device = False
 
   while True:
 
+    # Close the HID device if needed
+    if close_device:
+      if hiddev is not None:
+        try:
+          hiddev.close()
+        except:
+          pass
+        hiddev = None
+      sleep(2)	# Wait a bit to reopen the device
+
+      close_device = False
+
     # Grab the HID device for exclusive use by us
-    if not hiddev:
-
+    if hiddev is None:
       try:
-        hiddev=InputDevice(hid_reader_dev_file)
+        hiddev = InputDevice(device)
         hiddev.grab()
+
+      except KeyboardInterrupt:
+        return -1
+
       except:
-        if hiddev:
-          hiddev.close()
-        hiddev=None
-        sleep(2)	# Wait a bit as the device file is probably unavailable
+        close_device = True
         continue
 
-    rlines=[]
+    # Get events from the HID reader
+    try:
+      select([hiddev.fd], [], [], None)
+      events = list(hiddev.read())
 
-    # Wait for scancodes from the HID reader, or timeout
-    fds = select([hiddev.fd], [], [], hid_read_every)[0]
+    except:
+      close_device = True
+      continue
 
-    now=datetime.now().timestamp()
+    for event in events:
 
-    # read scancodes
-    if fds:
+      if event.type == ecodes.EV_KEY:
+        d = categorize(event)
 
-      try:
-        events=list(hiddev.read())
-      except:
-        if hiddev:
-          hiddev.close()
-        hiddev=None
-        sleep(2)	# Wait a bit as the device file is probably unavailable
-        continue
+        if d.scancode == SC_LSHIFT or d.scancode == SC_RSHIFT:
+          if d.keystate == KEYDOWN or d.keystate == KEYUP:
+            shifted = 1 if d.keystate == KEYDOWN else 0
 
-      for event in events:
+        elif d.scancode == SC_ENTER:
+          if uid:
+            main_in_q.put((LISTENER_UIDS_UPDATE, (listener_id, (uid,))))
+            uid = ""
 
-        if event.type == ecodes.EV_KEY:
-
-          d = categorize(event)
-
-          if d.scancode == SC_LSHIFT or d.scancode == SC_RSHIFT:
-
-            if d.keystate == KEYDOWN or d.keystate == KEYUP:
-              shifted=1 if d.keystate == KEYDOWN else 0
-
-          elif d.scancode == SC_ENTER:
-
-            if recvbuf:
-
-              rlines.append(recvbuf)
-              recvbuf=""
-
-          elif d.keystate == KEYDOWN and len(recvbuf) < 256:
-              recvbuf += scancodes_us_kbd.get(d.scancode, ["", ""])[shifted]
-
-      # Process the lines from the HID reader
-      for uid in rlines:
-
-        # Strip anything not hexadecimal out of the UID and uppercase it,
-        # so it has a chance to be compatible with UIDs read by the other
-        # listeners
-        uid="".join([c for c in uid.upper() if c in hexdigits])
-
-        # Add or update UIDs in the expires table
-        if uid not in active_uid_expires:
-          send_active_uids_update=True
-
-        active_uid_expires[uid]=now + hid_simulate_uid_stays_active
-
-    # Timeout
-    else:
-
-      # Send a keepalive message to the main process so it can trigger timeouts
-      main_in_q.put([MAIN_PROCESS_KEEPALIVE])
-
-    # Drop the active UIDs that have timed out
-    for uid in list(active_uid_expires):
-
-      if now > active_uid_expires[uid]:
-
-        del(active_uid_expires[uid])
-        send_active_uids_update=True
-
-    # Sent the updated list of active UIDs to the main process if needed
-    if send_active_uids_update:
-
-      main_in_q.put([HID_LISTENER_UIDS_UPDATE, list(active_uid_expires)])
-      send_active_uids_update=False
+        elif d.keystate == KEYDOWN and len(uid) < 256:
+          c = scancodes_us_kbd.get(d.scancode, ["", ""])[shifted]
+          if c in hexdigits:
+            uid += c.upper()
 
 
 
-def adb_listener(main_in_q):
-  """On an Android device with USB debugging turned on, run logcat to detect log
-  lines from a Tasker script that logs the %nfc_id variable with a prefix in the
-  system log upon receiving an NFC read event. The Tasker script is necessary
-  to recover the NFC UID, that isn't logged by Android itself. With the Tasker
-  script and USB debugging, we're able to exfiltrate the UID from the Android
-  device and turn it into a computer-attached reader.
+def android_listener(main_in_q, listener_id, params):
+  """On an Android device with USB debugging turned on, this listener runs
+  logcat to detect log lines from a Tasker script that logs the %nfc_id
+  variable with a prefix in the system log upon receiving an NFC read event.
+  The Tasker script is necessary to recover the NFC UID, that isn't
+  logged by Android itself. With the Tasker script and USB debugging, we're
+  able to exfiltrate the UID from the Android device and turn it into a
+  computer-attached reader.
 
   In addition, to provide persistent mode, the listener also listens for "tag
-  off" events from the Android system log. This may be disabled to degrade to
-  event mode using only the Tasker script, if the particular Android device or
-  Android version doesn't log these events for some reason.
+  off" events from the Android system log. If, for any reason, Android doesn't
+  doesn't log these events, set the UIDs timeout parameters to some positive
+  number of seconds to make the listener work in event mode.
 
   All this is functional but a bit hacky...
   """
 
-  setproctitle("sirfidal_server_adb_listener")
+  setproctitle("sirfidal_listener_{}".format(listener_id))
 
-  adb_proc=[None]
+  proc = [None]
 
   # SIGCHLD handler to reap defunct adb processes when they quit
   def sigchld_handler(sig, fname):
     os.wait()
-    adb_proc[0]=None
+    proc[0] = None
 
   signal(SIGCHLD, sigchld_handler)
 
-  adb_shell_command= \
+  # Parameters
+  persistent_mode = params["uids_timeout"] is None
+  client = params["client"]
+  logcat_prefix = params["logcat_prefix"]
+  adb_shell_command = \
 	"logcat -c" \
 	"&&" \
 	"logcat -v brief log:I NativeNfcTag:D StNativeNfcTag:D *:S"
 
-  recvbuf=""
+  recvbuf = ""
 
-  uid_lastseens={}
-  active_uids=[]
-  send_active_uids_update=True
-  tag_present=False
+  uid_lastseens = {}
+  active_uids = []
+  send_active_uids_update = True
+  tag_present = False
+
+  kill_client = False
+  force_uids_timeout_on_client_kill = False
 
   while True:
 
-    # Try to spawn an adb client
-    if not adb_proc[0]:
-      try:
+    # Kill the currently running client if needed
+    if kill_client:
 
-        adb_proc[0]=Popen(["adb", "shell", adb_shell_command],
-				bufsize=0,
-				stdin=DEVNULL, stdout=PIPE, stderr=DEVNULL)
+      # Send an empty UIDs list to the main process, to force-timeout any
+      # lingering UIDs if we're working in persistent mode
+      if persistent_mode and force_uids_timeout_on_client_kill:
+        main_in_q.put((LISTENER_UIDS_UPDATE, (listener_id, ())))
+        force_uids_timeout_on_client_kill = False
+
+      try:
+        proc[0].kill()
+      except:
+        pass
+      proc[0] = None
+      sleep(2)	# Wait a bit before trying to respawn a new client
+
+      kill_client = False
+
+    # Spawn a new adb client
+    if proc[0] is None:
+      try:
+        proc[0] = Popen([client, "shell", adb_shell_command],
+				bufsize = 0, stdin = DEVNULL,
+				stdout = PIPE, stderr = DEVNULL)
 
       except KeyboardInterrupt:
-        return(-1)
-      except:
-        adb_proc[0]=None
+        return -1
 
-    if not adb_proc[0]:
+      except:
+        proc[0] = None
+
+    if proc[0] is None:
       sleep(2)	# Wait a bit before trying to respawn a new adb client
       continue
 
-    # Read ls command outputs from adb - one UID per line expected
-    rlines=[]
-    b=""
+    # Get logcat lines from adb
+    rlines = []
+    b = ""
+
     try:
-
-      if(select([adb_proc[0].stdout], [], [], adb_read_every)[0]):
-
-        try:
-
-          b=adb_proc[0].stdout.read(256).decode("ascii")
-
-        except KeyboardInterrupt:
-          return(-1)
-        except:
-          b=""
-
-        if not b:
-          if adb_proc[0]:
-            try:
-              adb_proc[0].kill()
-            except:
-              pass
-            adb_proc[0]=None
-          sleep(2)	# Wait a bit before trying to respawn a new adb client
-          continue
-
-        # Split the data into lines
-        for c in b:
-
-          if c=="\n" or c=="\r":
-            rlines.append(recvbuf)
-            recvbuf=""
-
-          elif len(recvbuf)<256 and c.isprintable():
-            recvbuf+=c
+      b = proc[0].stdout.read(256).decode("ascii")
 
     except KeyboardInterrupt:
-      return(-1)
+      return -1
+
     except:
-      if adb_proc[0]:
-        try:
-          adb_proc[0].kill()
-        except:
-          pass
-        adb_proc[0]=None
-      sleep(2)	# Wait a bit before trying to respawn a new adb client
+      b = ""
+
+    if not b:
+      kill_client = True
       continue
 
-    tstamp=int(datetime.now().timestamp())
+    # Split the data into lines
+    for c in b:
+
+      if c in "\r\n":
+        rlines.append(recvbuf)
+        recvbuf = ""
+
+      elif c.isprintable() and len(recvbuf)<256:
+        recvbuf += c
 
     # Process the lines from logcat
     for l in rlines:
 
-      # In persistent mode, try to match "Tag lost" lines, mark the tag as
-      # absent from the reader and trigger an active UIDs list update if we
-      # get one
-      if adb_persistent_mode and tag_present and \
-		re.match("^.*NativeNfcTag.*Tag lost.*$", l, re.I):
-        tag_present=False
-        send_active_uids_update=True
+      # Try to match "Tag lost" lines and send an empty active UIDs list to the
+      # main process if we get one
+      if re.match("^.*NativeNfcTag.*Tag lost.*$", l, re.I):
+        main_in_q.put((LISTENER_UIDS_UPDATE, (listener_id, ())))
+        force_uids_timeout_on_client_kill = False
 
       # Extract UIDs logged by the Tasker script
       else:
-        m=re.findall("^.*log.*{}([0-9A-F]+).*$".format(
-		adb_nfcuid_log_prefix), l, re.I)
-        uid=m[0].upper() if m else None
+        m = re.findall("^.*log.*{}([0-9A-F]+).*$".format(logcat_prefix),
+			l, re.I)
 
-        # If we got a UID add or update its timestamp in the last-seen list.
-        # If we add it (new unknown UID), mark the tag as present on the reader
-        # and trigger an active UIDs list update
-        if uid:
-          if uid not in uid_lastseens:
-            tag_present=True
-            send_active_uids_update=True
-          uid_lastseens[uid]=tstamp
-
-    # Remove UID timestamps that are too old from the last-seen list and
-    # trigger an active UIDs list update if we're not in persistent mode
-    for uid in list(uid_lastseens):
-      if tstamp - uid_lastseens[uid] > adb_uid_timeout_in_non_persistent_mode:
-        del uid_lastseens[uid]
-        if not adb_persistent_mode:
-          send_active_uids_update=True
-
-    # Active UIDs update
-    if send_active_uids_update:
-
-      # Synchronize the list of active UIDs with the list of last-seen UIDs.
-      # If we're in persistent mode and the tag isn't present, consider the
-      # list of active UIDs empty instead
-      active_uids=[] if adb_persistent_mode and not tag_present \
-		else sorted(uid_lastseens)
-
-      # ...send the list to the main process...
-      main_in_q.put([ADB_LISTENER_UIDS_UPDATE, active_uids])
-
-      send_active_uids_update=False
-
-    else:
-
-      # ...else send a keepalive message to the main process so it can trigger
-      # timeouts
-      main_in_q.put([MAIN_PROCESS_KEEPALIVE])
+        # If we got a UID, send it as a one-UID active UIDs list to the main
+        # process
+        if m:
+          main_in_q.put((LISTENER_UIDS_UPDATE, (listener_id, (m[0].upper(),))))
+          force_uids_timeout_on_client_kill = True
 
 
 
-def pm3_listener(workdir, main_in_q):
+def proxmark3_listener(main_in_q, listener_id, params):
   """Read UIDs from a Proxmark3 reader.
 
   The Proxmark3 makes a pretty poor "dumb" reader because it just wasn't build
@@ -871,503 +790,485 @@ def pm3_listener(workdir, main_in_q):
   readers can't read for instance), it works.
   """
 
-  setproctitle("sirfidal_server_pm3_listener")
+  setproctitle("sirfidal_listener_{}".format(listener_id))
 
-  pm3_proc=[None]
+  proc = [None]
 
   # SIGCHLD handler to reap defunct proxmark3 processes when they quit or when
   # we kill them
   def sigchld_handler(sig, fname):
     os.wait()
-    pm3_proc[0]=None
+    proc[0] = None
 
   signal(SIGCHLD, sigchld_handler)
 
-  # Create a PTY pair to fool the Proxmark3 client into working interactively
-  pty_master, pty_slave = openpty()
+  # Parameters
+  client_workdir = params["client_workdir"]
+  client = params["client"]
+  device = params["device"]
+  client_timeout = params["client_timeout"]
+  poll_throttle = params["poll_throttle"]
 
   # Build the command sequence necessary to perform the reads requested in the
   # parameters
-  cmd_sequence_normal=[]
-  cmd_sequence_iceman=[]
-  lf_samples=0
+  cmd_sequence_normal = []
+  cmd_sequence_iceman = []
+  lf_samples = 0
 
-  if pm3_read_iso14443a:
+  if params["read_iso14443a"]:
     cmd_sequence_normal.append("hf 14a reader -3")
     cmd_sequence_iceman.append("hf 14a reader")
 
-  if pm3_read_iso15693:
+  if params["read_iso15693"]:
     cmd_sequence_normal.append("hf 15 cmd sysinfo u")
     cmd_sequence_iceman.append("hf 15 info u")
 
-  if pm3_read_em410x:
-    lf_samples=12288
-  if pm3_read_fdx:
-    lf_samples=15000
-  if pm3_read_indala:
-    lf_samples=25000
+  if params["read_em410x"]:
+    lf_samples = 12288
+
+  if params["read_fdx"]:
+    lf_samples = 15000
+
+  if params["read_indala"]:
+    lf_samples = 25000
 
   if lf_samples:
     cmd_sequence_normal.append("lf read s {}".format(lf_samples))
     cmd_sequence_iceman.append("lf read s d {}".format(lf_samples))
 
-  if pm3_read_indala:
+  if params["read_indala"]:
     cmd_sequence_normal.append("lf indala demod")
     cmd_sequence_iceman.append("lf indala demod")
 
-  if pm3_read_em410x:
+  if params["read_em410x"]:
     cmd_sequence_normal.append("lf em 410xdemod")
     cmd_sequence_iceman.append("lf em 410x_demod")
 
-  if pm3_read_fdx:
+  if params["read_fdx"]:
     cmd_sequence_normal.append("lf fdx demod")
     cmd_sequence_iceman.append("lf fdx demod")
 
-  cmd_sequence=cmd_sequence_normal	# Default sequence
+  cmd_sequence = cmd_sequence_normal	# Default sequence
+
+  # Create a PTY pair to fool the Proxmark3 client into working interactively
+  pty_master, pty_slave = openpty()
 
   # Possible Proxmark3 console prompts
-  pm3_prompts_regex=re.compile("^(proxmark3>|\[.*\] pm3 -->)$")
+  prompts_regex = re.compile("^(proxmark3>|\[.*\] pm3 -->)$")
 
-  recvbuf=""
+  recvbuf = ""
 
-  active_uids_temp=[]
-  active_uids=[]
+  in_indala_multiline_uid = False
 
-  in_indala_multiline_uid=False
-  send_active_uids_update=True
+  active_uids = []
 
-  cmd_sequence_i=0
+  kill_client = False
+  force_uids_timeout_on_client_kill = False
 
   while True:
 
-    # Try to spawn a Proxmark3 client, making sure we first chdir into its
-    # working directory where a fake "proxmark3.log" symlink to /dev/null is
-    # already present (normal Proxmark3 client) and without a HOME environment
-    # variable so the Iceman client doesn't know where to drop a .proxmark3
-    # directory and log things in it
-    if not pm3_proc[0]:
-      try:
+    # Kill the currently running client if needed
+    if kill_client:
 
-        os.chdir(workdir)
-        pm3_proc[0]=Popen([pm3_client, pm3_reader_dev_file], bufsize=0, env={},
-				stdin=pty_slave, stdout=PIPE, stderr=DEVNULL)
-        timeout_tstamp=int(datetime.now().timestamp()) + pm3_client_comm_timeout
+      # Send an empty UIDs list to the main process, to force-timeout any
+      # lingering UIDs
+      if force_uids_timeout_on_client_kill:
+        main_in_q.put((LISTENER_UIDS_UPDATE, (listener_id, ())))
+        force_uids_timeout_on_client_kill = False
+
+      try:
+        proc[0].kill()
+      except:
+        pass
+      proc[0] = None
+      sleep(2)	# Wait a bit before trying to respawn a new client
+
+      kill_client = False
+
+    # Spawn a Proxmark3 client
+    if proc[0] is None:
+      try:
+        # Make sure we first chdir into the client's working directory, where
+        # a fake "proxmark3.log" symlink to /dev/null is already present
+        # (normal Proxmark3 client) and without a HOME environment variable
+        # so the Iceman client doesn't know where to drop a .proxmark3
+        # directory and log things into it
+        os.chdir(client_workdir)
+
+        # Try to spawn a Proxmark3 client
+        proc[0] = Popen([client, device], bufsize = 0, env = {},
+			stdin = pty_slave, stdout = PIPE, stderr = DEVNULL)
+        timeout_tstamp = time() + client_timeout
+
+        # Start the command sequence at the beginning
+        cmd_sequence_i = 0
+        poll_start_tstamp = time()
 
       except KeyboardInterrupt:
-        return(-1)
-      except:
-        pm3_proc[0]=None
+        return -1
 
-    if not pm3_proc[0]:
+      except:
+        proc[0] = None
+
+    if proc[0] is None:
       sleep(2)	# Wait a bit before trying to respawn a new client
       continue
 
     # Read lines from the Proxmark3 client
-    rlines=[]
-    b=""
+    rlines = []
+    b = ""
+
     try:
 
-      if(select([pm3_proc[0].stdout], [], [], pm3_read_every)[0]):
+      if select([proc[0].stdout], [], [], client_timeout)[0]:
 
         try:
-
-          b=pm3_proc[0].stdout.read(256).decode("ascii")
+          b = proc[0].stdout.read(256).decode("ascii")
 
         except KeyboardInterrupt:
-          return(-1)
+          return -1
+
         except:
-          b=""
+          b = ""
 
         if not b:
-          if pm3_proc[0]:
-            try:
-              pm3_proc[0].kill()
-            except:
-              pass
-            pm3_proc[0]=None
-          sleep(2)	# Wait a bit before trying to respawn a new client
+          kill_client = True
           continue
 
         # Split the data into lines. If we get a prompt that doesn't end with
         # a CR or LF, make it into a line also
         for c in b:
 
-          if c=="\n" or c=="\r" or pm3_prompts_regex.match(recvbuf):
+          if c in "\r\n" or prompts_regex.match(recvbuf):
             rlines.append(recvbuf)
-            recvbuf=""
+            recvbuf = ""
 
-          elif len(recvbuf)<256 and c.isprintable():
-            recvbuf+=c
+          elif  c.isprintable() and len(recvbuf) < 256:
+            recvbuf += c
+
+      # Timeout: the Proxmark3 client is unresponsive
+      else:
+        kill_client = True
+        continue
 
     except KeyboardInterrupt:
-      return(-1)
+      return -1
+
     except:
-      if pm3_proc[0]:
-        try:
-          pm3_proc[0].kill()
-        except:
-          pass
-        pm3_proc[0]=None
-      sleep(2)	# Wait a bit before trying to respawn a new client
+      kill_client = True
       continue
 
-    tstamp=int(datetime.now().timestamp())
+    tstamp = time()
 
     # Process the lines from the client
     for l in rlines:
 
-      timeout_tstamp=tstamp + pm3_client_comm_timeout
+      timeout_tstamp = tstamp + client_timeout
 
       # If we detect an RRG/Iceman build, change the command sequence
-      if cmd_sequence==cmd_sequence_normal and re.search("RRG/Iceman", l):
-        cmd_sequence=cmd_sequence_iceman
+      if cmd_sequence == cmd_sequence_normal and re.search("RRG/Iceman", l):
+        cmd_sequence = cmd_sequence_iceman
 
       # If we detect a fatal error from the client, forcibly time it out
       if re.search("(proxmark failed|offline|OFFLINE|unknown command)", l):
-        timeout_tstamp=0
+        timeout_tstamp = 0
         break
 
       # We have a prompt
-      if pm3_prompts_regex.match(l):
+      if prompts_regex.match(l):
 
-        # If we reached the end of the command sequence, find out if the
-        # complete list of active UIDs has changed and start over
+        # If we reached the end of the command sequence, send the list of
+        # active UIDs to the main process and start over
         if cmd_sequence_i >= len(cmd_sequence):
+          main_in_q.put((LISTENER_UIDS_UPDATE, (listener_id, active_uids)))
+          force_uids_timeout_on_client_kill = True
+          active_uids = []
 
-          if active_uids_temp != active_uids:
-            active_uids=active_uids_temp
-            send_active_uids_update=True
+          # If the Proxmark3 works fast enough, sleep a bit to avoid
+          # polling too fast
+          sleep(max(0, poll_throttle - time() + poll_start_tstamp))
 
-          active_uids_temp=[]
-
-          cmd_sequence_i=0
+          # Restart the command sequence
+          cmd_sequence_i = 0
+          poll_start_tstamp = time()
 
         # Send the next command in the sequence
         os.write(pty_master, (cmd_sequence[cmd_sequence_i] + "\r").
 				encode("ascii"))
-        cmd_sequence_i+=1
+        cmd_sequence_i += 1
 
-      uid=None
+      uid = None
 
       # Match Indala multiline UIDs
       if in_indala_multiline_uid:
-        m=re.findall("^ \(([0-9a-f]*)\)\s*$", l)
+        m = re.findall("^ \(([0-9a-f]*)\)\s*$", l)
         if m:
-          uid=m[0]
-          in_indala_multiline_uid=False
+          uid = m[0]
+          in_indala_multiline_uid = False
         elif not re.match("^[01]+\s*$", l):
-          in_indala_multiline_uid=False
+          in_indala_multiline_uid = False
 
       else:
         if re.match("^\s*Indala UID=[01]+\s*$", l):
-          in_indala_multiline_uid=True
+          in_indala_multiline_uid = True
 
       # Match single lines containing UIDs
-      if not uid and not in_indala_multiline_uid:
-        m=re.findall("[\[\]+\s]*" \
+      if uid is None and not in_indala_multiline_uid:
+        m = re.findall("[\[\]+\s]*" \
 			"(UID|EM TAG ID|Indala Found .* Raw\s+0x|Animal ID)" \
 			"[\s:]*([0-9a-fA-F- ]+)$", l)
-        uid=m[0][1] if m else None
+        uid = m[0][1] if m else None
 
-      # We got a UID: strip anything not hexadecimal out of the UID and
-      # uppercase it, so it has a chance to be compatible with UIDs read by the
-      # other listeners, then add it to the list of active UIDs
+      # If we got a UID, add it to the list of active UIDs
       if uid:
-        uid="".join([c for c in uid.upper() if c in hexdigits])
-        active_uids_temp=sorted(active_uids_temp + [uid])
-        if uid not in active_uids:
-          active_uids=sorted(active_uids + [uid])
-          send_active_uids_update=True
-
-    # If the list of active UIDs has changed, send it to the main process
-    if send_active_uids_update:
-      main_in_q.put([PM3_LISTENER_UIDS_UPDATE, active_uids])
-      send_active_uids_update=False
-
-    else:
-
-      # ...else send a keepalive message to the main process so it can trigger
-      # timeouts
-      main_in_q.put([MAIN_PROCESS_KEEPALIVE])
-
-    # If we haven't received lines from the Proxmark3 client for too long,
-    # kill it
-    if tstamp > timeout_tstamp:
-      if pm3_proc[0]:
-        try:
-          pm3_proc[0].kill()
-        except:
-          pass
-        pm3_proc[0]=None
-      sleep(2)	# Wait a bit before trying to respawn a new client
-      continue
+        uid = "".join([c for c in uid.upper() if c in hexdigits])
+        active_uids = sorted(set(active_uids) | set([uid]))
 
 
 
-def chameleon_listener(main_in_q):
+def chameleon_listener(main_in_q, listener_id, params):
   """Actively read ISO14443A UIDs from a single Chameleon Mini / Tiny device
   and send the list of active UIDs to the main process. One of the setting slots
   must be configured as a reader
   """
 
   # Modules
-  from serial import Serial
+  import serial
 
-  setproctitle("sirfidal_server_chameleon_listener")
+  setproctitle("sirfidal_listener_{}".format(listener_id))
 
-  recvbuf=""
+  # Parameters
+  device = params["device"]
+  poll_throttle = params["uids_timeout"] / 2
 
-  uid_lastseens={}
+  recvbuf = ""
+  chamdev = None
 
-  chamdev=None
-  send_active_uids_update=True
+  close_device = False
 
   while True:
 
-    # Open the reader's device file if it's closed
-    if not chamdev:
+    # Close the Chameleon device if needed
+    if close_device:
       try:
-        chamdev=Serial(chameleon_dev_file, timeout=0)
+        chamdev.close()
+      except:
+        pass
+      chamdev = None
+      sleep(2)	# Wait a bit to reopen the device
+
+      close_device = False
+
+    # Open the Chameleon device
+    if chamdev is None:
+      try:
+        chamdev = serial.Serial(port = device,
+				baudrate = 9600,
+				bytesize = serial.EIGHTBITS,
+				parity = serial.PARITY_NONE,
+				stopbits = serial.STOPBITS_ONE,
+				timeout = None)
         reader_state = 0
         start_slot = -1
-      except KeyboardInterrupt:
-        return(-1)
-      except:
-        chamdev=None
+        poll_start_tstamp = time()
 
-    if not chamdev:
+      except KeyboardInterrupt:
+        return -1
+
+      except:
+        chamdev = None
+
+    if chamdev is None:
       sleep(2)	# Wait a bit to reopen the device
       continue
 
     # Determine the command to send to the Chameleon - if any
     cmd = None
-    if reader_state==0:		# Query the current slot
-      cmd = "SETTING?"
-    elif reader_state==3:	# Is the current slot configured as reader?
-      cmd = "CONFIG?"
-    elif reader_state==6:	# Select the slot
-      cmd = "SETTING={}".format(slot)
-    elif reader_state==8:	# Send a read command
-      cmd = "GETUID"
-    elif reader_state==11:	# Turn the field on
-      cmd = "FIELD=1"
-    elif reader_state==13:	# Turn the field off
-      cmd = "FIELD=0"
+    if reader_state == 0:	# Query the current slot
+      cmd = "SETTING?\r"
+    elif reader_state == 3:	# Is the current slot configured as reader?
+      cmd = "CONFIG?\r"
+    elif reader_state == 6:	# Select the slot
+      cmd = "SETTING={}\r".format(slot)
+    elif reader_state == 8:	# Send a read command
+      cmd = "GETUID\r"
+    elif reader_state == 11:	# Turn the field on
+      cmd = "FIELD=1\r"
+    elif reader_state == 13:	# Turn the field off
+      cmd = "FIELD=0\r"
 
     # Send the command to the Chameleon
     if cmd:
 
-      cmd = (cmd + "\r").encode("ascii")
-
       try:
-        sent=chamdev.write(cmd)
+        sent = chamdev.write(cmd.encode("ascii"))
 
       except KeyboardInterrupt:
-        return(-1)
-      except:
-        sent=-1
+        return -1
 
-      if sent!=len(cmd):
-        try:
-          chamdev.close()
-        except:
-          pass
-        chamdev=None
-        sleep(2)	# Wait a bit to reopen the device
+      except:
+        sent = -1
+
+      if sent != len(cmd):
+        close_device = True
         continue
 
-      reader_state+=1
+      reader_state += 1
 
     # Read responses from the reader
-    rlines=[]
-    b=""
+    l = ""
+
     try:
-
-      if(select([chamdev.fileno()], [], [], chameleon_read_every)[0]):
-
-        try:
-
-          b=os.read(chamdev.fileno(), 256).decode("ascii")
-
-        except KeyboardInterrupt:
-          return(-1)
-        except:
-          b=""
-
-        if not b:
-          try:
-            chamdev.close()
-          except:
-            pass
-          chamdev=None
-          sleep(2)	# Wait a bit to reopen the device
-          continue
-
-        # Split the data into lines
-        for c in b:
-
-          if c=="\n":
-            rlines.append(recvbuf)
-            recvbuf=""
-
-          elif len(recvbuf)<256 and c.isprintable() and c!="\r":
-            recvbuf+=c
+      c = chamdev.read(1).decode("ascii")
 
     except KeyboardInterrupt:
-      return(-1)
+      return -1
+
     except:
-      try:
-        chamdev.close()
-      except:
-        pass
-      chamdev=None
-      sleep(2)	# Wait a bit to reopen the device
+      c = ""
+
+    if not c:
+      close_device = True
       continue
 
-    tstamp=int(datetime.now().timestamp())
+    if c == "\n":
+      l = recvbuf
+      recvbuf = ""
 
-    uid=""
+    elif c.isprintable() and c != "\r" and len(recvbuf)<256:
+      recvbuf += c
 
     # Process the lines from the device
-    for l in rlines:
+    if l:
 
       # Are we waiting for a formatted reply and did we get the correct reply?
-      if (reader_state in (1, 4, 9) and l=="101:OK WITH TEXT") or \
-		(reader_state in (7, 12, 14) and l=="100:OK"):
+      if (reader_state in (1, 4, 9) and l == "101:OK WITH TEXT") or \
+		(reader_state in (7, 12, 14) and l == "100:OK"):
 
-        if reader_state==7:	# Slot selection command successful
-          reader_state=3
-        elif reader_state==12:	# Field on command successful
+        if reader_state == 7:		# Slot selection command successful
+          reader_state = 3
+        elif reader_state == 12:	# Field on command successful
           sleep(.1)
-          reader_state+=1
-        elif reader_state==14:	# Field off command successful
+          reader_state += 1
+        elif reader_state == 14:	# Field off command successful
           sleep(1)
-          reader_state=11
-        else:			# Any other response line
-          reader_state+=1
+          reader_state = 11
+        else:				# Any other response line
+          reader_state += 1
 
       # Are we waiting for a slot number?
-      elif reader_state==2 and re.match("^[0-9]$", l):
+      elif reader_state == 2 and re.match("^[0-9]$", l):
         try:
-          slot=int(l)
-          slot=-1 if slot<1 else 8 if slot>8 else slot
+          slot = int(l)
+          slot = -1 if slot < 1 else 8 if slot > 8 else slot
         except:
-          slot=-1
+          slot = -1
 
         # If we got an error getting the slot number, close the reader
-        if slot==-1:
-          try:
-            chamdev.close()
-          except:
-            pass
-          uid=""
-          chamdev=None
-          sleep(2)	# Wait a bit to reopen the device
+        if slot == -1:
+          close_device = True
           break
 
-        start_slot=slot
-        reader_state=3
+        start_slot = slot
+        reader_state = 3
 
       # Are we waiting for a slot configuration string?
-      elif reader_state==5:
-        if l=="ISO14443A_READER":
-          reader_state=8
+      elif reader_state == 5:
+        if l == "ISO14443A_READER":
+          reader_state = 8
         else:
           # Scan the next slot
-          slot=slot+1 if slot<8 else 1
+          slot = slot + 1 if slot < 8 else 1
 
           # If we scanned all the slots, start flashing the field (which also
           # flashes the white LED) to tell the user we can't do anything with
           # the reader
-          if slot==start_slot:
-            reader_state=11
+          if slot == start_slot:
+            reader_state = 11
           else:
-            reader_state=6
+            reader_state = 6
 
       # Did we get a GETUID timeout?
-      elif reader_state==9 and l=="203:TIMEOUT":
-        reader_state=8
+      elif reader_state == 9 and l == "203:TIMEOUT":
+        reader_state = 8
 
-      # Are we waiting for a UID
-      elif reader_state==10 and re.match("^[0-9a-zA-Z]+$", l):
-        uid=l.upper()
-        reader_state=8
+      # Are we waiting for a UID?
+      elif reader_state == 10 and re.match("^[0-9a-zA-Z]+$", l):
+
+        # Send it as a one-UID active UIDs list to the main
+        # process
+        main_in_q.put((LISTENER_UIDS_UPDATE, (listener_id, (l.upper(),))))
+
+        # Sleep long enough to avoid polling uselessly
+        sleep(max(0, poll_throttle - time() + poll_start_tstamp))
+        poll_start_tstamp = time()
+
+        reader_state = 8
 
       # Invalid response
       else:
-        try:
-          chamdev.close()
-        except:
-          pass
-        uid=""
-        chamdev=None
-        sleep(2)	# Wait a bit to reopen the device
+        close_device = True
         break
 
-      # If we got a UID, add or update its timestamp in the last-seen list
-      if uid:
-        if uid not in uid_lastseens:
-          send_active_uids_update=True
-        uid_lastseens[uid]=tstamp
-
-    # Remove UID timestamps that are too old from the last-seen list
-    for uid in list(uid_lastseens):
-      if tstamp - uid_lastseens[uid] > chameleon_uid_not_sent_inactive_timeout:
-        del uid_lastseens[uid]
-        send_active_uids_update=True
-
-    # If the active UIDs have changed...
-    if send_active_uids_update:
-
-      # ...send the list to the main process...
-      main_in_q.put([CHAMELEON_LISTENER_UIDS_UPDATE, list(uid_lastseens)])
-      send_active_uids_update=False
-
-    else:
-
-      # ...else send a keepalive message to the main process so it can trigger
-      # timeouts
-      main_in_q.put([MAIN_PROCESS_KEEPALIVE])
 
 
-
-def ufr_listener(main_in_q):
+def ufr_listener(main_in_q, listener_id, params):
   """Receive UIDs from a uFR or uFR Nano Online reader configured in slave mode,
   then send the active UID to the main process.
   """
 
-  setproctitle("sirfidal_server_ufr_listener")
-
   # Modules
   import pyufr
 
-  uFR=pyufr.uFR()
+  setproctitle("sirfidal_listener_{}".format(listener_id))
 
-  ufr=None
-  uids=[]
+  # Parameters
+  device = params["device"]
+  poll_every = params["poll_every"]
+  polled_mode = poll_every is not None
+  polled_power_saving = params["poll_powersave"]
+  debounce_delay = params["debounce_delay"]
+  no_rgb1 = params["no_rgb1"]
+  no_rgb2_on = params["no_rgb2_on"]
+  no_rgb2_off = params["no_rgb2_off"]
+  conn_recheck_every = params["conn_watchdog"]
 
-  close_device=False
+  uFR = pyufr.uFR()
 
-  uids_off_report_tstamp=0
-  last_sent_uids=None
-  send_update=True
+  ufr = None
+  uids = []
+
+  uids_off_debounce_tstamp = None
+
+  close_device = False
+  force_uids_timeout_on_device_close = False
 
   while True:
 
-    now=datetime.now().timestamp()
-
     # Close the uFR device if needed
     if close_device:
-      ufr.close()
-      ufr=None
-      close_device=False
-      sleep(2)	# Wait a bit to reopen the device
 
-    # Open the uFR device if needed
-    if not ufr:
+      # Send an empty UIDs list to the main process, to force-timeout any
+      # lingering UIDs if we're working in polled (i.e. persistent) mode
+      if polled_mode and force_uids_timeout_on_device_close:
+        main_in_q.put((LISTENER_UIDS_UPDATE, (listener_id, ())))
+        force_uids_timeout_on_device_close = False
 
       try:
-        ufr=uFR.open(ufr_device, restore_on_close = True)
+        ufr.close()
+      except:
+        pass
+      ufr = None
+      sleep(2)	# Wait a bit to reopen the device
+
+      close_device = False
+
+    start_tstamp = time()
+
+    # Open the uFR device
+    if not ufr:
+      try:
+        ufr = uFR.open(device, restore_on_close = True)
 
         # Disable tag emulation and ad-hoc mode, in case we find the reader in
         # a strange state
@@ -1377,135 +1278,121 @@ def ufr_listener(main_in_q):
         # Set asynchronous ID sending mode if needed, or enable anti-collision
         # if we use polled mode, and put the red LED on once and for all if we
         # do power saving in polled mode
-        if not ufr_polled_mode:
+        if polled_mode:
+          ufr.enable_anti_collision()
+        else:
           ufr.disable_anti_collision()
           ufr.set_card_id_send_conf(True)
-          recheck_conn_at_tstamp=now + ufr_device_check_every
-        else:
-          ufr.enable_anti_collision()
-          if ufr_polled_power_saving:
-            ufr.red_light_control(True)
+          recheck_conn_at_tstamp = start_tstamp + conn_recheck_every
 
       except:
         sleep(2)	# Wait a bit to reopen the device
         continue
 
-      red_led_state=True
-      ufr_no_rgb2=ufr_no_rgb2_tag_off
-      set_leds=True
+      red_led_state = True
+      red_led_state_prev = None
 
-    # Should we set the LEDs?
-    if set_leds:
+      no_rgb2 = no_rgb2_off
+      no_rgb2_prev = None
 
-      # Try to set the red LED on if the reader isn't asleep. Fail silently
-      if not (ufr_polled_mode and ufr_polled_power_saving):
+      first_run = True
+
+    # If we get here right after opening the uFR device, go set the LEDs
+    # righaway
+    if not first_run:
+
+      # Should we recheck the connection with the reader?
+      if not polled_mode and start_tstamp > recheck_conn_at_tstamp:
         try:
-          ufr.red_light_control(red_led_state)
+          ufr.get_firmware_version()
+          recheck_conn_at_tstamp = start_tstamp + conn_recheck_every
         except:
-          pass
+          close_device = True
+          continue
 
-      # Try to set the Nano Online LEDs if we have RGB values. Fail silently
-      if ufr_no_rgb1 and ufr_no_rgb2:
-        try:
-          ufr.esp_set_display_data(ufr_no_rgb1, ufr_no_rgb2, 0)
-        except:
-          pass
-
-      set_leds=False
-
-    # Should we recheck the connection with the reader?
-    if not ufr_polled_mode and now > recheck_conn_at_tstamp:
+      # Get a UID from the uFR reader using the polling of asynchronous method
       try:
-        ufr.get_firmware_version()
-        recheck_conn_at_tstamp=now + ufr_device_check_every
+        if polled_mode:
+          if polled_power_saving:
+            try:
+              ufr.leave_sleep_mode()
+            except:
+              ufr.leave_sleep_mode()
+          ufr.enum_cards()
+          uids = sorted(ufr.list_cards())
+          if polled_power_saving:
+            ufr.enter_sleep_mode()
+        else:
+          uid = ufr.get_async_id(conn_recheck_every \
+				if uids_off_debounce_tstamp is None \
+				else debounce_delay)
+          uids = [uid] if uid else []
+          recheck_conn_at_tstamp = time() + conn_recheck_every
+
+      except TimeoutError:
+        if polled_mode:
+          close_device = True
+          continue
+        else:
+          uids = []
+
+      except KeyboardInterrupt:
+        try:
+          ufr.close()
+        except:
+          pass
+        return -1
+
       except:
-        close_device=True
+        close_device = True
         continue
 
-    # Get a UID from the uFR reader using the polling of asynchronous method
-    last_uids=uids
-    try:
-      if ufr_polled_mode:
-        if ufr_polled_power_saving:
-          try:
-            ufr.leave_sleep_mode()
-          except:
-            ufr.leave_sleep_mode()
-        ufr.enum_cards()
-        uids=sorted(ufr.list_cards())
-        if ufr_polled_power_saving:
-          ufr.enter_sleep_mode()
-      else:
-        uid=ufr.get_async_id(ufr_read_every)
-        uids=[uid] if uid else []
-        recheck_conn_at_tstamp=now + ufr_device_check_every
+      end_tstamp = time()
 
-    except TimeoutError:
-      if ufr_polled_mode:
-        close_device=True
-        continue
-      else:
-        # Send a keepalive message to the main process so it can trigger
-        # timeouts
-        main_in_q.put([MAIN_PROCESS_KEEPALIVE])
+      # Send the UIDs and set the LEDs depending on whether one or more UID is
+      # active. But if we have no active UIDs and we're in async mode, only do
+      # so after a debounce delay
+      if not polled_mode and not uids and uids_off_debounce_tstamp is None:
+        uids_off_debounce_tstamp = end_tstamp + debounce_delay
 
-    except KeyboardInterrupt:
+      if polled_mode or uids or (uids_off_debounce_tstamp is not None and \
+		end_tstamp > uids_off_debounce_tstamp):
+
+        main_in_q.put((LISTENER_UIDS_UPDATE, (listener_id, uids)))
+        force_uids_timeout_on_device_close = True
+
+        red_led_state = False if uids else True
+        no_rgb2 = no_rgb2_on if uids else no_rgb2_off
+
+        uids_off_debounce_tstamp = None
+
+    # Set the red LED if needed. Fail silently
+    if red_led_state_prev is None or (red_led_state != red_led_state_prev and \
+		not (polled_mode and polled_power_saving)):
       try:
-        ufr.close()
+        ufr.red_light_control(red_led_state)
       except:
         pass
-      break
+      red_led_state_prev = red_led_state
 
-    except:
-      close_device=True
-      continue
+    # Set the Nano Online LEDs if needed, if we have RGB values. Fail silently
+    if no_rgb1 is not None and no_rgb2 is not None and no_rgb2 != no_rgb2_prev:
+      try:
+        ufr.esp_set_display_data(no_rgb1, no_rgb2, 0)
+      except:
+        pass
+      no_rgb2_prev = no_rgb2
 
-    # Did the UID change, or go off long enough for us to take action?
-    if uids!=last_uids or (not uids and uids_off_report_tstamp):
+    # If we're in polled mode and it's not the first run, wait a bit to prevent
+    # polling too fast
+    if not first_run and polled_mode:
+      sleep(max(0, poll_every - end_tstamp + start_tstamp))
 
-      send_update=True
-
-      # Prevent UID-off events from being reported too fast
-      if not uids:
-        if not uids_off_report_tstamp:
-          uids_off_report_tstamp=now + ufr_debounce_delay
-          send_update=False
-        elif now < uids_off_report_tstamp:
-          send_update=False
-        else:
-          uids_off_report_tstamp=0
-      else:
-        uids_off_report_tstamp=0
-        if uids==last_sent_uids:
-          send_update=False
-
-    # Should we send an updated list of UIDs to the main process?
-    if send_update:
-
-      # Send the list to the main process
-      main_in_q.put([UFR_LISTENER_UIDS_UPDATE, uids])
-      last_sent_uids=uids
-
-      # Update the state of the LEDs
-      red_led_state=not uids
-      ufr_no_rgb2=ufr_no_rgb2_tag_on if uids else ufr_no_rgb2_tag_off
-      set_leds=True
-
-      send_update=False
-
-    # If nothing has changed, send a keepalive message to the main process in
-    # polled mode, so it can trigger timeouts
-    elif ufr_polled_mode:
-      main_in_q.put([MAIN_PROCESS_KEEPALIVE])
-
-      # Wait a bit to prevent polling too fast
-      remaining_wait=ufr_read_every - datetime.now().timestamp() + now
-      if remaining_wait > 0:
-        sleep(remaining_wait)
+    first_run = False
 
 
 
-def http_listener(main_in_q):
+def http_listener(main_in_q, listener_id, params):
   """Run a simplistic web server to receive UIDs in HTTP GET or POST messages,
   then send the list of active UIDs to the main process.
   """
@@ -1513,246 +1400,186 @@ def http_listener(main_in_q):
   # Modules
   from http.server import BaseHTTPRequestHandler, HTTPServer
 
-  # Dummy error handler to abuse the exception mechanism to bubble retrieved
-  # UIDs to the main process from the do_GET or do_POST handler
-  def error_handler(request, client_address):
-    raise
+  setproctitle("sirfidal_listener_{}".format(listener_id))
+
+  # Parameters
+  bind_addr =  params["bind_address"]
+  bind_port =  params["bind_port"]
+  get_data_fmt = params["get_data_fmt"]
+  get_reply = params["get_reply"]
+  post_data_fmt = params["post_data_fmt"]
+  post_reply = params["post_reply"]
 
   # Handler class
   class handler_class(BaseHTTPRequestHandler):
 
+    # HTTP GET method
     def do_GET(self):
 
-      if not http_get_data_format:
+      if not get_data_fmt:
         return
 
-      # Does the GET URL contain a valid UID?
-      m=re.findall(http_get_data_format, self.path)
-      uid="".join([c for c in m[0].upper() if c in hexdigits]) if m else ""
+      # If the GET URL contain a valid UID, send it as a one-UID active UIDs
+      # list to the main process
+      m = re.findall(get_data_fmt, self.path)
+      if m:
+        uid = "".join([c for c in m[0].upper() if c in hexdigits])
+        main_in_q.put((LISTENER_UIDS_UPDATE, (listener_id, (uid,))))
 
       # Reply to the HTTP client
       self.send_response(200)
-      self.send_header('Content-type', 'text/plain')
+      self.send_header("Content-type", "text/plain")
       self.end_headers()
-      self.wfile.write(http_get_reply.encode("ascii"))
+      self.wfile.write(get_reply.encode("ascii"))
 
-      # Bubble up the UID (or lack thereof) to the main loop
-      raise(RuntimeWarning(uid))
-
+    # HTTP POST method
     def do_POST(self):
 
-      if not http_post_data_format:
+      if not post_data_fmt:
         return
 
-      # Get the POST data from the HTTP client that reported it
-      content_length=int(self.headers['Content-Length'])
-      post_data=self.rfile.read(content_length).decode("ascii") \
+      # If the POST URL contain a valid UID, send it as a one-UID active UIDs
+      # list to the main process
+      content_length = int(self.headers['Content-Length'])
+      post_data = self.rfile.read(content_length).decode("ascii") \
 			if content_length>0 else ""
 
       # Does the POST data contain a valid UID?
-      m=re.findall(http_post_data_format, post_data)
-      uid="".join([c for c in m[0].upper() if c in hexdigits]) if m else ""
+      m = re.findall(post_data_fmt, post_data)
+      if m:
+        uid = "".join([c for c in m[0].upper() if c in hexdigits])
+        main_in_q.put((LISTENER_UIDS_UPDATE, (listener_id, (uid,))))
 
       # Reply to the HTTP client
       self.send_response(200)
       self.send_header('Content-type', 'text/plain')
       self.end_headers()
-      self.wfile.write(http_post_reply.encode("ascii"))
+      self.wfile.write(post_reply.encode("ascii"))
 
-      # Bubble up the UID (or lack thereof) to the main loop
-      raise(RuntimeWarning(uid))
-
+    # Empty logger to suppress logging messages
     def log_message(self, format, *args):
       return
 
-  setproctitle("sirfidal_server_http_listener")
-
   # Set up the HTTP server
-  httpd=HTTPServer((http_server_address, http_server_port), handler_class)
-  httpd.timeout=http_read_every
-  httpd.handle_timeout=lambda: (_ for _ in ()).throw(TimeoutError())
-  httpd.handle_error=error_handler
+  httpd = HTTPServer((bind_addr, bind_port), handler_class)
 
-  uid_lastseens={}
-
-  send_active_uids_update=True
-
-  while True:
-
-    uid=""
-
-    # Handle one HTTP request
-    try:
-      httpd.handle_request()
-    except RuntimeWarning as e:
-      uid=str(e)
-    except KeyboardInterrupt:
-      break
-    except:
-      pass
-
-    tstamp=int(datetime.now().timestamp())
-
-    # If we got a UID, add or update its timestamp in the last-seen list
-    if uid:
-      if uid not in uid_lastseens:
-        send_active_uids_update=True
-      uid_lastseens[uid]=tstamp
-
-    # Remove UID timestamps that are too old from the last-seen list
-    for uid in list(uid_lastseens):
-      if tstamp - uid_lastseens[uid] > http_uid_not_sent_inactive_timeout:
-        del uid_lastseens[uid]
-        send_active_uids_update=True
-
-    # If the active UIDs have changed...
-    if send_active_uids_update:
-
-      # ...send the list to the main process...
-      main_in_q.put([HTTP_LISTENER_UIDS_UPDATE, list(uid_lastseens)])
-      send_active_uids_update=False
-
-    else:
-
-      # ...else send a keepalive message to the main process so it can trigger
-      # timeouts
-      main_in_q.put([MAIN_PROCESS_KEEPALIVE])
+  # Run the HTTP server
+  httpd.serve_forever()
 
 
 
-def tcp_listener(main_in_q):
-  """Read the UIDs from a TCP socket
+def tcp_listener(main_in_q, listener_id, params):
+  """Read UIDs from a TCP socket then send the list of active UIDs to the
+  main process.
   """
 
   # Modules
   from socket import socket, timeout, AF_INET, SOCK_STREAM
 
-  setproctitle("sirfidal_server_tcp_listener")
+  setproctitle("sirfidal_listener_{}".format(listener_id))
 
-  recvbuf=""
+  # Parameters
+  server_addr =  params["server_address"]
+  server_port =  params["server_port"]
+  tcp_keepalive =  params["tcp_keepalive"]
 
-  uid_lastseens={}
+  recvbuf = ""
+  sock = None
 
-  sock=None
-  send_active_uids_update=True
-
-  keepalive_timeout=0
+  close_socket = False
 
   while True:
 
-    # Open the socket if it's closed
-    if not sock:
+    # Close the socket if needed
+    if close_socket:
       try:
-        sock=socket(AF_INET, SOCK_STREAM)
-        sock.settimeout(tcp_connect_timeout)
-        sock.connect((tcp_server_address, tcp_server_port))
-      except KeyboardInterrupt:
-        return(-1)
+        sock.close()
       except:
-        sock=None
+        pass
+      sock = None
+      sleep(2)	# Wait a bit to reopen the socket
 
-    if not sock:
+      close_socket = False
+
+    start_tstamp = time()
+
+    # Open the socket
+    if sock is None:
+      try:
+        sock = socket(AF_INET, SOCK_STREAM)
+        sock.settimeout(None)
+        sock.connect((server_addr, server_port))
+
+      except KeyboardInterrupt:
+        return -1
+
+      except:
+        sock = None
+
+    if sock is None:
       sleep(2)	# Wait a bit to reopen the socket
       continue
 
     # Read UIDs from the socket
     rlines=[]
     b=""
+
     try:
 
-      if(select([sock.fileno()], [], [], tcp_read_every)[0]):
+      if(select([sock.fileno()], [], [], tcp_keepalive)[0]):
 
         try:
-
-          b=sock.recv(256).decode("ascii")
+          b = sock.recv(256).decode("ascii")
 
         except KeyboardInterrupt:
-          return(-1)
+          return -1
+
         except:
-          b=""
+          b = ""
 
         if not b:
-          try:
-            sock.close()
-          except:
-            pass
-          sock=None
-          sleep(2)	# Wait a bit to reopen the socket
+          close_socket = True
           continue
-
 
         # Split the data into lines
         for c in b:
 
-          if c=="\n" or c=="\r":
+          if c in "\r\n":
             rlines.append(recvbuf)
-            recvbuf=""
+            recvbuf = ""
 
-          elif len(recvbuf)<256 and c.isprintable():
-            recvbuf+=c
+          elif c.isprintable() and len(recvbuf)<256:
+            recvbuf += c
+
+      # Timeout: send a keepalive message to the TCP server to detect if the
+      # link went down
+      else:
+        try:
+          sock.sendall(b"\n")
+
+        except KeyboardInterrupt:
+          return -1
+
+        except:
+          close_socket = True
+
+        continue
 
     except KeyboardInterrupt:
-      return(-1)
-    except:
-      try:
-        sock.close()
-      except:
-        pass
-      sock=None
-      sleep(2)	# Wait a bit to reopen the socket
-      continue
+      return -1
 
-    tstamp=int(datetime.now().timestamp())
+    except:
+      close_socket = True
+      continue
 
     # Process the lines from the device
     for l in rlines:
 
-      # Strip anything not hexadecimal out of the UID and uppercase it,
-      # so it has a chance to be compatible with UIDs read by the other
-      # listeners
-      uid="".join([c for c in l.upper() if c in hexdigits])
-
-      # If we got a UID, add or update its timestamp in the last-seen list
+      # If we got a UID, send it as a one-UID active UIDs list to the main
+      # process
+      uid = "".join([c for c in l.upper() if c in hexdigits])
       if uid:
-        if uid not in uid_lastseens:
-          send_active_uids_update=True
-        uid_lastseens[uid]=tstamp
-
-    # Remove UID timestamps that are too old from the last-seen list
-    for uid in list(uid_lastseens):
-      if tstamp - uid_lastseens[uid] > tcp_uid_not_sent_inactive_timeout:
-        del uid_lastseens[uid]
-        send_active_uids_update=True
-
-    # If the active UIDs have changed...
-    if send_active_uids_update:
-
-      # ...send the list to the main process...
-      main_in_q.put([TCP_LISTENER_UIDS_UPDATE, list(uid_lastseens)])
-      send_active_uids_update=False
-
-    else:
-
-      # ...else send a keepalive message to the main process so it can trigger
-      # timeouts
-      main_in_q.put([MAIN_PROCESS_KEEPALIVE])
-
-    # Send a keepalive message to the TCP server to detect if the link went down
-    if sock and tcp_keepalive:
-      if tstamp > keepalive_timeout:
-        try:
-          sock.sendall(b"\n")
-        except KeyboardInterrupt:
-          return(-1)
-        except:
-          try:
-            sock.close()
-          except:
-            pass
-          sock=None
-          sleep(2)	# Wait a bit to reopen the socket
-          continue
-        keepalive_timeout=tstamp+tcp_keepalive
+        main_in_q.put((LISTENER_UIDS_UPDATE, (listener_id, (uid,))))
 
 
 
@@ -1775,7 +1602,7 @@ def server(main_in_q, sock):
     conn, _ = sock.accept()
 
     # Get the calling process' PID, UID and GID
-    creds=conn.getsockopt(SOL_SOCKET, SO_PEERCRED, struct.calcsize("3i"))
+    creds = conn.getsockopt(SOL_SOCKET, SO_PEERCRED, struct.calcsize("3i"))
     pid, uid, gid = struct.unpack("3i", creds)
 
     # If the user isn't local, close the connection
@@ -1786,7 +1613,7 @@ def server(main_in_q, sock):
     # Get the passwd name of the calling process' UID. It should exist, so if
     # we get an error, this is fishy and we should close the connection.
     try:
-      pw_name=pwd.getpwuid(uid).pw_name
+      pw_name = pwd.getpwuid(uid).pw_name
     except:
       conn.close()
       continue
@@ -1795,7 +1622,7 @@ def server(main_in_q, sock):
     main_out_p, chandler_out_p = Pipe()
 
     # Spawn a client handler
-    Process(target=client_handler, args=(
+    Process(target = client_handler, args = (
 		  pid,
 		  uid,
 		  gid,
@@ -1803,8 +1630,7 @@ def server(main_in_q, sock):
 		  main_in_q,
 		  main_out_p,
 		  chandler_out_p,
-		  conn
-		)).start()
+		  conn)).start()
 
 
 
@@ -1821,208 +1647,204 @@ def client_handler(pid, uid, gid, pw_name,
     os.setgid(gid)
     os.setuid(uid)
   except:
-    return(0)
+    return 0
 
   # Client receive buffer
-  crecvbuf=""
+  crecvbuf = ""
 
   # Client send buffer
-  csendbuf=""
+  csendbuf = ""
 
-  force_stop_tstamp=None
+  force_stop_tstamp = None
 
   # Inform the main process that we have a new client
-  main_in_q.put([NEW_CLIENT, [pid, pw_name, main_out_p]])
-  new_client_ack=False
+  main_in_q.put((NEW_CLIENT, (pid, pw_name, main_out_p)))
+  new_client_ack = False
 
   while True:
 
     # Do we have something to send to the client?
     if(csendbuf):
-      if(conn):
+      if(conn is not None):
         try:
           conn.sendall((csendbuf + "\n").encode("ascii"))
         except:	# Oops, the socket was closed
           # inform the main process we want to stop and close the socket.
-          main_in_q.put([CLIENT_HANDLER_STOP_REQUEST, [pid, main_out_p]])
+          main_in_q.put((CLIENT_HANDLER_STOP_REQUEST, (pid, main_out_p)))
           conn.close()
-          conn=none
-      csendbuf=""
+          conn = None
+      csendbuf = ""
 
     # Wait for either the main process of the client to send us something
-    fds=select(
-	  [chandler_out_p] + ([conn] if conn and new_client_ack else []), \
-	  [], [], 1
-	)[0]
+    fds = select([chandler_out_p] + \
+			([conn] if conn is not None and new_client_ack else []),
+			[], [], 1)[0]
 
     # Did we hit the timeout?
     if not fds:
 
       # Should we force-close the socket and quit?
-      if force_stop_tstamp and datetime.now().timestamp() > force_stop_tstamp:
+      if force_stop_tstamp and time() > force_stop_tstamp:
 
-        main_in_q.put([CLIENT_HANDLER_STOP_REQUEST, [pid, main_out_p]])
+        main_in_q.put((CLIENT_HANDLER_STOP_REQUEST, (pid, main_out_p)))
         conn.close()
-        conn=None
+        conn = None
         continue
 
     for fd in fds:
 
       # Message from the main process
-      if fd==chandler_out_p:
+      if fd == chandler_out_p:
 
-        msg=fd.recv()
+        msg = fd.recv()
 
         # New client notification aknowledgment
-        if msg[0]==NEW_CLIENT_ACK:
-          new_client_ack=True
+        if msg[0] == NEW_CLIENT_ACK:
+          new_client_ack = True
           continue
 
         # The main process reports an authentication result: send the result
-        # to the client
-        elif msg[0]==AUTH_RESULT:
-          csendbuf="AUTHOK" if msg[1][0]==AUTH_OK else "NOAUTH"
-
-          # Also send the authenticating UIDs in plaintext if the main process
-          # deems it okay
+        # to the client. Also send the authenticating UIDs in plaintext if the
+        # main process deems it okay
+        elif msg[0] == AUTH_RESULT:
+          csendbuf = "AUTHOK" if msg[1][0] == AUTH_OK else "NOAUTH"
           if msg[1][1]:
-            csendbuf+=" {}".format(" ".join([uid for uid in msg[1][1]]))
-
+            csendbuf += " {}".format(" ".join([uid for uid in msg[1][1]]))
           continue
 
         # The main process reports an update in the number of active UIDs: sent
         # it to the client
-        elif msg[0]==NBUIDS_UPDATE:
-          csendbuf="NBUIDS {} {}".format(msg[1][0], msg[1][1])
+        elif msg[0] == NBUIDS_UPDATE:
+          csendbuf = "NBUIDS {} {}".format(msg[1][0], msg[1][1])
           continue
 
         # The main process reports an update in the list of active UIDs: sent
         # it to the client
-        elif msg[0]==UIDS_UPDATE:
-          csendbuf="UIDS{}".format("".join([" " + s for s in msg[1][0]]))
+        elif msg[0] == UIDS_UPDATE:
+          csendbuf = "UIDS{}".format("".join([" " + s for s in msg[1][0]]))
           continue
 
         # The main process reports successfully updating the encrypted UIDs:
         # notify the client
-        elif msg[0]==ENCRUIDS_UPDATE_OK:
-          csendbuf="OK"
+        elif msg[0] == ENCRUIDS_UPDATE_OK:
+          csendbuf = "OK"
           continue
 
         # The main process reports an error updating the encrypted UIDs
         # because the user <-> UID association already exists: notify the client
-        elif msg[0]==ENCRUIDS_UPDATE_ERR_EXISTS:
-          csendbuf="EXISTS"
+        elif msg[0] == ENCRUIDS_UPDATE_ERR_EXISTS:
+          csendbuf = "EXISTS"
           continue
 
         # The main process reports an error updating the encrypted UIDs
         # because it hasn't found any user <-> UID association to delete:
         # notify the client
-        elif msg[0]==ENCRUIDS_UPDATE_ERR_NONE:
-          csendbuf="NONE"
+        elif msg[0] == ENCRUIDS_UPDATE_ERR_NONE:
+          csendbuf = "NONE"
           continue
 
         # The main process reports a timeout waiting for a UID to associate
         # or disassociate with a UID
-        elif msg[0]==ENCRUIDS_UPDATE_ERR_TIMEOUT:
-          csendbuf="TIMEOUT"
+        elif msg[0] == ENCRUIDS_UPDATE_ERR_TIMEOUT:
+          csendbuf = "TIMEOUT"
           continue
 
         # The main process reports an error writing the encrypted UIDs file:
         # notify the client
-        elif msg[0]==ENCRUIDS_UPDATE_ERR_WRITE:
-          csendbuf="WRITEERR"
+        elif msg[0] == ENCRUIDS_UPDATE_ERR_WRITE:
+          csendbuf = "WRITEERR"
           continue
 
         # The main process reports a void request timeout (in other words, the
         # client has failed to place a valid request in time).
-        elif msg[0]==VOID_REQUEST_TIMEOUT:
+        elif msg[0] == VOID_REQUEST_TIMEOUT:
 
           # Inform the main process we want to stop and close the socket.
-          main_in_q.put([CLIENT_HANDLER_STOP_REQUEST, [pid, main_out_p]])
+          main_in_q.put((CLIENT_HANDLER_STOP_REQUEST, (pid, main_out_p)))
           conn.close()
-          conn=None
+          conn = None
 
           continue
 
         # The main process instructs us to stop
-        elif msg[0]==CLIENT_HANDLER_STOP:
-          return(0)
+        elif msg[0] == CLIENT_HANDLER_STOP:
+          return 0
 
       # Message from the client
-      elif fd==conn:
+      elif fd == conn:
 
         # Get data from the socket
         try:
-          b=fd.recv(256).decode("ascii")
+          b = fd.recv(256).decode("ascii")
         except:	# Oops, the socket was closed
           # inform the main process we want to stop and close the socket.
-          main_in_q.put([CLIENT_HANDLER_STOP_REQUEST, [pid, main_out_p]])
+          main_in_q.put((CLIENT_HANDLER_STOP_REQUEST, (pid, main_out_p)))
           conn.close()
-          conn=None
+          conn = None
           continue
 
         # If we got nothing, the client has closed its end of the socket.
         # Inform the main process we want to stop and close the socket.
-        if len(b)==0:
-          main_in_q.put([CLIENT_HANDLER_STOP_REQUEST, [pid, main_out_p]])
+        if len(b) == 0:
+          main_in_q.put((CLIENT_HANDLER_STOP_REQUEST, (pid, main_out_p)))
           conn.close()
-          conn=None
+          conn = None
           continue
 
         # Split the data into lines
-        clines=[]
+        clines = []
         for c in b:
 
-          if c=="\n" or c=="\r":
+          if c in "\r\n":
             clines.append(crecvbuf)
-            crecvbuf=""
+            crecvbuf = ""
 
-          elif len(crecvbuf)<256 and c.isprintable():
-            crecvbuf+=c
+          elif c.isprintable() and len(crecvbuf)<256:
+            crecvbuf += c
 
         # Process client requests
         for l in clines:
 
           # WATCHNBUIDS request
-          if l=="WATCHNBUIDS":
-            main_in_q.put([WATCHNBUIDS_REQUEST, [pid]])
+          if l == "WATCHNBUIDS":
+            main_in_q.put((WATCHNBUIDS_REQUEST, (pid,)))
 
           # WATCHUIDS request: the user must be root. If not, deny the request
-          elif l=="WATCHUIDS":
-            if uid==0:
-              main_in_q.put([WATCHUIDS_REQUEST, [pid]])
+          elif l == "WATCHUIDS":
+            if uid == 0:
+              main_in_q.put((WATCHUIDS_REQUEST, (pid,)))
             else:
-              csendbuf="NOAUTH"
+              csendbuf = "NOAUTH"
 
           else:
             # WAITAUTH request
-            m=re.findall("^WAITAUTH\s([^\s]+)\s([-+]?[0-9]+\.?[0-9]*)$", l)
+            m = re.findall("^WAITAUTH\s([^\s]+)\s([-+]?[0-9]+\.?[0-9]*)$", l)
             if m:
-              main_in_q.put([WAITAUTH_REQUEST, [pid, m[0][0], float(m[0][1])]])
+              main_in_q.put((WAITAUTH_REQUEST, (pid, m[0][0], float(m[0][1]))))
 
             else:
               # ADDUSER request: the user must be root, or be the same user
               # as the one for which a new association is requested. If not,
               # deny the request
-              m=re.findall("^ADDUSER\s([^\s]+)\s([-+]?[0-9]+\.?[0-9]*)$", l)
+              m = re.findall("^ADDUSER\s([^\s]+)\s([-+]?[0-9]+\.?[0-9]*)$", l)
               if m:
-                if uid==0 or m[0][0]==pw_name:
-                  main_in_q.put([ADDUSER_REQUEST, [pid, m[0][0],
-							float(m[0][1])]])
+                if uid == 0 or m[0][0] == pw_name:
+                  main_in_q.put((ADDUSER_REQUEST, (pid, m[0][0],
+							float(m[0][1]))))
                 else:
-                  csendbuf="NOAUTH"
+                  csendbuf = "NOAUTH"
 
               else:
                 # DELUSER request: the user must be root, or be the same user
                 # as the one for which a new association is requested. If not,
                 # deny the request
-                m=re.findall("^DELUSER\s([^\s]+)\s([-+]?[0-9]+\.?[0-9]*)$", l)
+                m = re.findall("^DELUSER\s([^\s]+)\s([-+]?[0-9]+\.?[0-9]*)$", l)
                 if m:
-                  if uid==0 or m[0][0]==pw_name:
-                    main_in_q.put([DELUSER_REQUEST, [pid, m[0][0],
-							float(m[0][1])]])
+                  if uid == 0 or m[0][0] == pw_name:
+                    main_in_q.put((DELUSER_REQUEST, (pid, m[0][0],
+							float(m[0][1]))))
                   else:
-                    csendbuf="NOAUTH"
+                    csendbuf = "NOAUTH"
 
 
 
@@ -2034,12 +1856,12 @@ def is_remote_user(pid):
   But we keep it around as a last ditch effort to keep honest people honest, if
   the user has ignored the warning in the README.
   """
-  pprocess=psutil.Process(pid=pid)
+  pprocess = psutil.Process(pid=pid)
 
   while(pprocess and pprocess.name() not in remote_user_parent_process_names):
-    pprocess=pprocess.parent()
+    pprocess = pprocess.parent()
 
-  return(pprocess!=None)
+  return pprocess is not None
 
 
 
@@ -2055,45 +1877,41 @@ def load_encruids():
 
   # Get the file's modification time
   try:
-    mt=os.stat(encrypted_uids_file).st_mtime
+    mt = os.stat(encrypted_uids_file).st_mtime
   except:
-    encruids=[]
-    return(None)
+    encruids = []
+    return None
 
   # Check if the file has changed
   if not encruids_file_mtime:
-    encruids_file_mtime=mt
+    encruids_file_mtime = mt
   else:
     if mt <= encruids_file_mtime:
-      return(False)
+      return False
 
   # Re-read the file
   try:
     with open(encrypted_uids_file, "r") as f:
-      new_encruids=json.load(f)
+      new_encruids = json.load(f)
   except:
-    encruids=[]
-    return(None)
+    encruids = []
+    return None
 
   # Validate the structure of the JSON format
   if not isinstance(new_encruids, list):
-    encruids=[]
-    return(None)
+    encruids = []
+    return None
 
   for entry in new_encruids:
-    if not (
-	  isinstance(entry, list) and
-          len(entry)==2 and
-	  isinstance(entry[0], str) and
-	  isinstance(entry[1], str)
-	):
-      encruids=[]
-      return(None)
+    if not (isinstance(entry, list) and len(entry) == 2 and
+		  isinstance(entry[0], str) and isinstance(entry[1], str)):
+      encruids = []
+      return None
 
   # Update the encrypted UIDs currently in memory
-  encruids_file_mtime=mt
-  encruids=new_encruids
-  return(True)
+  encruids_file_mtime = mt
+  encruids = new_encruids
+  return True
 
 
 
@@ -2103,11 +1921,32 @@ def write_encruids(new_encruids):
 
   try:
     with open(encrypted_uids_file, "w") as f:
-      json.dump(new_encruids, f, indent=2)
+      json.dump(new_encruids, f, indent = 2)
   except:
-    return(False)
+    return False
 
-  return(True)
+  return True
+
+
+
+def param_check(params, p, types, checker):
+  """Check that the parameter p is present in the params dictionary, that it
+  has one of the types in the types tuple, and that the checker function
+  returns True when passed its value.
+  Returns None if the parameter checks out, an error message otherwise
+  """
+
+  if p not in params:
+    return 'missing parameter "{}"'.format(p)
+
+  if type(params[p]) not in types:
+    return 'parameter "{}" should be of type {}'.format(p,
+		" or ".join([t.__name__ for t in types]))
+
+  if checker is not None and not checker(params[p]):
+    return 'invalid value "{}" for parameter "{}"'.format(params[p], p)
+
+  return None
 
 
 
@@ -2119,38 +1958,164 @@ def main():
   setproctitle("sirfidal_server")
 
   # Main routine's input queue
-  main_in_q=Queue()
+  main_in_q = Queue()
 
-  # If we use a normal Proxmark3 client as a backend, create a "proxmark3.log"
-  # symlink to /dev/null in its working directory to prevent it from logging
-  # anything
-  if watch_pm3:
+  # Get the list of valid reader types from the list of .*_listener() functions
+  # in the module
+  valid_reader_types = [m[0][:-9] \
+			for m in inspect.getmembers(sys.modules[__name__]) \
+			if re.search("^.*_listener$", m[0])]
 
-    pm3_logfile=os.path.join(pm3_client_workdir, "proxmark3.log")
+  # Listener-specific parameters, types and verification functions
+  reader_params_check_params = {
 
-    if os.path.exists(pm3_logfile):
-      if not os.path.islink(pm3_logfile):
-        print("Error: {} already exists and isn't a symlink. Giving up.".format(
-						pm3_logfile))
-        return(-1)
-    else:
-      try:
-        os.symlink(os.devnull, pm3_logfile)
-      except:
-        print("Error: cannot symlink {} to {}. Giving up.".format(
-						pm3_logfile, os.devnull))
-        return(-1)
+      # USB PC/SC readers
+    "pcsc_readers":	{
+      "poll_every":	((int, float), lambda v: v > 0)
+    },
+
+    # Serial reader
+    "serial_reader_#1":	{
+      "device":		((str,), lambda v: v != ""),
+      "baudrate":	((int,), lambda v: v > 0),
+      "bytesize":	((int,), lambda v: v in (7, 8)),
+      "parity":		((str,), lambda v: v in ("N", "E", "O", "M", "S")),
+      "stopbits":	((int, float), lambda v: v in (1, 1.5, 2))
+    },
+
+    # HID reader
+    "keyboard_wedge_#1":	{
+      "device":		((str,), lambda v: v != "")
+    },
+
+    # Android device used as an NFC reader through ADB
+    "android_device_#1":	{
+      "client":		((str,), lambda v: v != ""),
+      "logcat_prefix":	((str,), lambda v: v != "")
+    },
+
+    # Proxmark3
+    "proxmark3_#1":	{
+      "device":		((str,), lambda v: v != ""),
+      "client":		((str,), lambda v: v != ""),
+      "client_workdir":	((str,), lambda v: v != ""),
+      "client_timeout":	((int, float), lambda v: v > 0),
+      "read_iso14443a":	((bool,), None),
+      "read_iso15693":	((bool,), None),
+      "read_em410x":	((bool,), None),
+      "read_indala":	((bool,), None),
+      "read_fdx":	((bool,), None),
+      "poll_throttle":	((int, float), lambda v: v > 0)
+    },
+
+    # Chameleon Mini / Tiny
+    "chameleon_#1":	{
+      "device":		((str,), lambda v: v != "")
+    },
+
+    # uFR or uFR Nano Online in slave mode
+    "ufr_nano_#1":	{
+      "device":		((str,), lambda v: v != ""),
+      "poll_every":	((type(None), int, float), lambda v: v is None or v >0),
+      "poll_powersave":	((bool,), None),
+      "debounce_delay":	((int, float), lambda v: v > 0),
+      "no_rgb1":		((list, tuple), lambda v: len(v) == 3),
+      "no_rgb2_on":	((list, tuple), lambda v: len(v) == 3),
+      "no_rgb2_off":	((list, tuple), lambda v: len(v) == 3),
+      "conn_watchdog":	((int, float), lambda v: v > 0)
+    },
+
+    # HTTP server getting UIDs using the GET or POST method
+    "http_server_#1":	{
+      "bind_address":	((str,), None),
+      "bind_port":	((int,), lambda v: v > 0),
+      "get_data_fmt":	((type(None), str), lambda v: v is None or v != ""),
+      "get_reply":	((str, ), None),
+      "post_data_fmt":	((type(None), str), lambda v: v is None or v != ""),
+      "post_reply":	((str, ), None),
+    },
+
+    # TCP client getting UIDs from a TCP server
+    "tcp_client_#1":	{
+      "server_address":	((str,), lambda v: v != ""),
+      "server_port":	((int,), lambda v: v > 0),
+      "tcp_keepalive":	((type(None), int, float), lambda v: v is None or v > 0)
+    }
+  }
+
+  # Parse the list of readers in the configuration parameters, ensure the reader
+  # names are valid and all the entries have valid parameters.
+  # Additionally, if a reader is type "proxmark3", create a bogus working
+  # directory with a "proxmark3.log" symlink pointing to /dev/null in it to
+  # prevent it from logging anything
+  enabled_listeners = {}
+
+  for name in readers:
+
+    if not name.isprintable():
+      print("Error: invalid reader name {}. Giving up.".format(name))
+      return -1
+
+    r = param_check(readers[name], "enabled", (bool,), None)
+    if r:
+      print("Error: {} in declaration of reader {}. Giving up.".format(r, name))
+      return -1
+
+    if readers[name]["enabled"]:
+
+      r = param_check(readers[name], "type", (str,),
+			lambda v: v in valid_reader_types)
+      if r:
+        print("Error: {} in declaration of reader {}. Giving up."
+		.format(r, name))
+        return -1
+
+      enabled_listeners[name] = globals()[readers[name]["type"] + "_listener"]
+
+      r = param_check(readers[name], "uids_timeout", (type(None), int, float),
+			lambda v: v is None or v > 0)
+      if r:
+        print("Error: {} in declaration of reader {}. Giving up."
+		.format(r, name))
+        return -1
+
+      for p in reader_params_check_params[name]:
+        r = param_check(readers[name], p,
+			reader_params_check_params[name][p][0],
+			reader_params_check_params[name][p][1])
+        if r:
+          print("Error: {} in declaration of reader {}. Giving up."
+		.format(r, name))
+          return -1
+
+      if readers[name]["type"] == "proxmark3":
+
+        pm3_logfile = os.path.join(readers[name]["client_workdir"],
+					"proxmark3.log")
+
+        if os.path.exists(pm3_logfile):
+          if not os.path.islink(pm3_logfile):
+            print("Error: {} already exists and isn't a symlink. "
+			"Giving up.".format(pm3_logfile))
+            return -1
+        else:
+          try:
+            os.symlink(os.devnull, pm3_logfile)
+          except:
+            print("Error: cannot symlink {} to {}. "
+			"Giving up.".format(pm3_logfile, os.devnull))
+            return -1
 
   # Set up the server's socket
-  sock=socket(AF_UNIX, SOCK_STREAM)
+  sock = socket(AF_UNIX, SOCK_STREAM)
 
-  socklock=FileLock(socket_path + ".lock")
+  socklock = FileLock(socket_path + ".lock")
   try:
-    with socklock.acquire(timeout=1):
+    with socklock.acquire(timeout = 1):
       os.unlink(socket_path)
   except Timeout:
     print("Error: socket locked. Giving up.")
-    return(-1)
+    return -1
   except:
     pass
   finally:
@@ -2165,131 +2130,100 @@ def main():
   # root can read or write to it
   os.umask(0o077)
 
-
-
   # Start the server
   Process(target=server, args=(main_in_q, sock,)).start()
 
-  # Start the PC/SC listener
-  if watch_pcsc:
-    Process(target=pcsc_listener, args=(main_in_q,)).start()
+  # Start the enabled listeners
+  listener_uids_timeout = {}
+  listener_active_uids_timeouts = {}
 
-  # Start the serial listener
-  if watch_serial:
-    Process(target=serial_listener, args=(main_in_q,)).start()
+  for name in enabled_listeners:
 
-  # Start the HID listener
-  if watch_hid:
-    Process(target=hid_listener, args=(main_in_q,)).start()
+    Process(target = enabled_listeners[name],
+		args = (main_in_q, name, readers[name])).start()
 
-  # Start the ADB listener
-  if watch_adb:
-    Process(target=adb_listener, args=(main_in_q,)).start()
-
-  # Start the Proxmark3 listener
-  if watch_pm3:
-    Process(target=pm3_listener, args=(pm3_client_workdir,main_in_q,)).start()
-
-  # Start the Chameleon listener
-  if watch_chameleon:
-    Process(target=chameleon_listener, args=(main_in_q,)).start()
-
-  # Start the uFR listener
-  if watch_ufr:
-    Process(target=ufr_listener, args=(main_in_q,)).start()
-
-  # Start the HTTP server listener
-  if watch_http:
-    Process(target=http_listener, args=(main_in_q,)).start()
-
-  # Start the TCP listener
-  if watch_tcp:
-    Process(target=tcp_listener, args=(main_in_q,)).start()
-
-
+    listener_uids_timeout[name] = readers[name]["uids_timeout"]
+    listener_active_uids_timeouts[name] = {}
 
   # Main process
-  active_pcsc_uids=[]
-  active_serial_uids=[]
-  active_hid_uids=[]
-  active_adb_uids=[]
-  active_pm3_uids=[]
-  active_chameleon_uids=[]
-  active_ufr_uids=[]
-  active_http_uids=[]
-  active_tcp_uids=[]
-  active_uids=[]
-  active_uids_prev=None
-  auth_cache={}
-  auth_uids_cache={}
-  active_uids_update=False
-  active_clients={}
+  active_uids = []
+  active_uids_prev = []
+  active_uids_update = False
+
+  auth_cache = {}
+  auth_uids_cache = {}
+  active_clients = {}
+
+  now = time()
 
   while True:
 
-    # Get a message from another process
-    msg=main_in_q.get()
-    msg_tstamp=datetime.now().timestamp()
+    # Figure out how long we should wait for a message from another process for
+    # from either the next active UID due time out, or the next active client
+    # request due to expire
+    timeouts = [active_clients[cpid].expires \
+		for cpid in active_clients \
+		if active_clients[cpid].expires is not None] + \
+		[listener_active_uids_timeouts[name][uid] \
+		for name in enabled_listeners \
+		for uid in listener_active_uids_timeouts[name] \
+		if listener_active_uids_timeouts[name][uid] is not None]
+    msg_get_timeout = max(0, min(timeouts) - now) if timeouts else None
 
-    # Skip all tests for other kinds of messages if it's a keepalive message
-    if msg[0] != MAIN_PROCESS_KEEPALIVE:
+    # Get a message from another process
+    try:
+      msg = main_in_q.get(timeout = msg_get_timeout)
+    except KeyboardInterrupt:
+      return -1
+    except:
+      msg = None
+
+    now = time()
+
+    active_uids_update = False
+
+    # Drop any active UID that has timed out from the individual listeners'
+    # active UIDs
+    for name in enabled_listeners:
+      for uid in list(listener_active_uids_timeouts[name]):
+        if listener_active_uids_timeouts[name][uid] is not None and \
+		now > listener_active_uids_timeouts[name][uid]:
+          del(listener_active_uids_timeouts[name][uid])
+          active_uids_update = True
+
+    # Process the message if we have one
+    if msg is not None:
 
       # The message is an update of the active UIDs from one of the listeners
-      if msg[0] in (PCSC_LISTENER_UIDS_UPDATE, SERIAL_LISTENER_UIDS_UPDATE,
-		HID_LISTENER_UIDS_UPDATE, ADB_LISTENER_UIDS_UPDATE,
-		PM3_LISTENER_UIDS_UPDATE, CHAMELEON_LISTENER_UIDS_UPDATE,
-		UFR_LISTENER_UIDS_UPDATE, HTTP_LISTENER_UIDS_UPDATE,
-		TCP_LISTENER_UIDS_UPDATE):
+      if msg[0] == LISTENER_UIDS_UPDATE:
 
-        if msg[0] == PCSC_LISTENER_UIDS_UPDATE:
-          active_pcsc_uids=msg[1]
-        elif msg[0] == SERIAL_LISTENER_UIDS_UPDATE:
-          active_serial_uids=msg[1]
-        elif msg[0] == HID_LISTENER_UIDS_UPDATE:
-          active_hid_uids=msg[1]
-        elif msg[0] == ADB_LISTENER_UIDS_UPDATE:
-          active_adb_uids=msg[1]
-        elif msg[0] == PM3_LISTENER_UIDS_UPDATE:
-          active_pm3_uids=msg[1]
-        elif msg[0] == CHAMELEON_LISTENER_UIDS_UPDATE:
-          active_chameleon_uids=msg[1]
-        elif msg[0] == UFR_LISTENER_UIDS_UPDATE:
-          active_ufr_uids=msg[1]
-        elif msg[0] == HTTP_LISTENER_UIDS_UPDATE:
-          active_http_uids=msg[1]
-        elif msg[0] == TCP_LISTENER_UIDS_UPDATE:
-          active_tcp_uids=msg[1]
+        name = msg[1][0]
+        uids = msg[1][1]
 
-        # Merge new the lists of UIDs from all the listeners and filter out
-        # ignored UIDs
-        active_uids_new=list(set(sorted(
-				[uids_translation_table[uid] \
-				if uid in uids_translation_table \
-				else uid for uid in
-				active_pcsc_uids + active_serial_uids + \
-				active_hid_uids + active_adb_uids + \
-				active_pm3_uids + active_chameleon_uids + \
-				active_ufr_uids + active_http_uids + \
-				active_tcp_uids])))
-
-        # Has the list of UIDs changed?
-        if active_uids_new!=active_uids:
-          active_uids_prev=active_uids
-          active_uids=active_uids_new
-          active_uids_update=True
+        # If the listener is persistent, simply take the new list of UIDs it
+        # reports as the complete list of active UIDs it knows about. If it
+        # has a UIDs timeout attached to it, add any new UIDs it reports and
+        # refresh the associated timeouts
+        if listener_uids_timeout[name] is None:
+          listener_active_uids_timeouts[name] = {uid: None for uid in uids}
+        else:
+          for uid in uids:
+            listener_active_uids_timeouts[name][uid] = now + \
+						listener_uids_timeout[name]
+        active_uids_update = True
 
       # New client notification from a client handler
       elif msg[0] == NEW_CLIENT:
 
         # Create this client in the list of active clients and assign it the
         # void request to time out the client if it stays idle too long
-        active_clients[msg[1][0]]=client()
-        active_clients[msg[1][0]].pw_name=msg[1][1]
-        active_clients[msg[1][0]].main_out_p=msg[1][2]
-        active_clients[msg[1][0]].request=VOID_REQUEST
-        active_clients[msg[1][0]].expires=msg_tstamp + \
+        active_clients[msg[1][0]] = client()
+        active_clients[msg[1][0]].pw_name = msg[1][1]
+        active_clients[msg[1][0]].main_out_p = msg[1][2]
+        active_clients[msg[1][0]].request = VOID_REQUEST
+        active_clients[msg[1][0]].expires = now + \
 			client_force_close_socket_timeout
-        active_clients[msg[1][0]].main_out_p.send([NEW_CLIENT_ACK])
+        active_clients[msg[1][0]].main_out_p.send((NEW_CLIENT_ACK,))
 
       # The client requested that we either:
       # - authenticate a user within a certain delay (capped)
@@ -2298,80 +2232,94 @@ def main():
       # - disassociate a user from a UID, waiting for the UID within a certain
       #   deiay (capped) or remove all entries for the user in the encrypted
       #   UIDs file (delay < 0)
-      elif msg[0] == WAITAUTH_REQUEST or \
-		msg[0] == ADDUSER_REQUEST or \
-		msg[0] == DELUSER_REQUEST:
+      elif msg[0] in (WAITAUTH_REQUEST, ADDUSER_REQUEST, DELUSER_REQUEST):
 
         # Update this client's request in the list of active requests. Cap the
         # delay the client may request
-        active_clients[msg[1][0]].request=msg[0]
-        active_clients[msg[1][0]].user=msg[1][1]
-        active_clients[msg[1][0]].expires=None if msg[1][2] < 0 else \
-		msg_tstamp + (msg[1][2] if msg[1][2] <= max_auth_request_wait \
+        active_clients[msg[1][0]].request = msg[0]
+        active_clients[msg[1][0]].user = msg[1][1]
+        active_clients[msg[1][0]].expires = None if msg[1][2] < 0 else \
+		now + (msg[1][2] if msg[1][2] <= max_auth_request_wait \
 		else max_auth_request_wait)
 
       # The client requested to watch the evolution of the number of active
-      # UIDs in real time
-      elif msg[0] == WATCHNBUIDS_REQUEST:
+      # UIDs or the evolution of the list of UIDs themselves in real time
+      elif msg[0] in (WATCHNBUIDS_REQUEST, WATCHUIDS_REQUEST):
 
         # Update this client's request in the list of active requests.
         # No timeout for this request: it's up to the client to close the
         # socket when it's done
-        active_clients[msg[1][0]].request=WATCHNBUIDS_REQUEST
-        active_clients[msg[1][0]].user=None
-        active_clients[msg[1][0]].expires=None
-
-      # The client requested to watch the evolution of the list of UIDs
-      # themselves in real time
-      elif msg[0] == WATCHUIDS_REQUEST:
-
-        # Update this client's request in the list of active requests.
-        # No timeout for this request: it's up to the client to close the
-        # socket when it's done
-        active_clients[msg[1][0]].request=WATCHUIDS_REQUEST
-        active_clients[msg[1][0]].user=None
-        active_clients[msg[1][0]].expires=None
+        active_clients[msg[1][0]].request = msg[0]
+        active_clients[msg[1][0]].user = None
+        active_clients[msg[1][0]].expires = None
 
       # Remove a client from the list of active clients and tell the handler
       # to stop
       elif msg[0] == CLIENT_HANDLER_STOP_REQUEST:
 
         del(active_clients[msg[1][0]])
-        msg[1][1].send([CLIENT_HANDLER_STOP])
+        msg[1][1].send((CLIENT_HANDLER_STOP,))
+
+
+
+    # Merge the active UIDs for all the listeners into one list of active
+    # UIDs if any change has occurred to any of the individual listeners'
+    # active UIDs
+    if active_uids_update:
+
+      active_uids_new = sorted(list(set([uids_translation_table[uid] \
+				if uid in uids_translation_table \
+				else uid for uid in \
+				[uid for name in enabled_listeners \
+				for uid in listener_active_uids_timeouts[name]]
+				])))
+
+      # Has the combined list of active UIDs actually changed?
+      if set(active_uids_new) != set(active_uids):
+        active_uids_prev = active_uids
+        active_uids = active_uids_new
+        active_uids_update = True
+      else:
+        active_uids_update = False
 
 
 
     # Try to reload the encrypted UIDs file. If it needed reloading, or if the
     # list of active UIDs has changed, wipe the user authentication cache
     if load_encruids() or active_uids_update:
-      auth_cache={}
-      auth_uids_cache={}
+      auth_cache = {}
+      auth_uids_cache = {}
 
-    # Process the active clients' requests
+
+
+    # Process the active clients' requests and request timeouts
     for cpid in active_clients:
 
-      auth=False
-      auth_uids=[]
+      auth = False
+      auth_uids = []
 
-      # If we arrive here following a keepalive message, only process timeouts
-      if msg[0] != MAIN_PROCESS_KEEPALIVE:
+
+
+      # Process active clients' requests only if we get here after getting
+      # a message from another process or if the list of active UIDs has
+      # changed
+      if msg is not None or active_uids_update:
 
         # Request to watch the evolution of the number of active UIDs in
         # real-time: send an update if one is available
         if active_clients[cpid].request == WATCHNBUIDS_REQUEST and \
-		active_uids_update and active_uids_prev != None and \
+		active_uids_update and \
 		len(active_uids) != len(active_uids_prev):
-          active_clients[cpid].main_out_p.send([NBUIDS_UPDATE, \
-		[len(active_uids), len(active_uids) - len(active_uids_prev)]])
+          active_clients[cpid].main_out_p.send((NBUIDS_UPDATE, \
+		(len(active_uids), len(active_uids) - len(active_uids_prev))))
 
         # Request to watch the evolution of the list of active UIDs in
         # real-time: send an update if one is available
         if active_clients[cpid].request == WATCHUIDS_REQUEST and \
-		active_uids_prev != None and \
-		(active_clients[cpid].new_request or \
-		(active_uids != active_uids_prev and active_uids_update)):
-          active_clients[cpid].main_out_p.send([UIDS_UPDATE, [active_uids]])
-          active_clients[cpid].new_request=False
+		(active_clients[cpid].new_request or (active_uids_update and \
+		set(active_uids) != set(active_uids_prev))):
+          active_clients[cpid].main_out_p.send((UIDS_UPDATE, (active_uids,)))
+          active_clients[cpid].new_request = False
 
         # Authentication request
         elif active_clients[cpid].request == WAITAUTH_REQUEST:
@@ -2379,8 +2327,8 @@ def main():
           # First, try to find a cached authentication status for that user...
           if active_clients[cpid].user in auth_cache:
 
-            auth=auth_cache[active_clients[cpid].user]
-            auth_uids=auth_uids_cache[active_clients[cpid].user]
+            auth = auth_cache[active_clients[cpid].user]
+            auth_uids = auth_uids_cache[active_clients[cpid].user]
 
           # otherwise try to match all the active UIDs with the registered
           # encrypted UIDs associated with that user
@@ -2390,7 +2338,7 @@ def main():
               for registered_user, registered_uid_encr in encruids:
                 if registered_user == active_clients[cpid].user and crypt(
 			  uid, registered_uid_encr) == registered_uid_encr:
-                  auth=True		# User authenticated...
+                  auth = True		# User authenticated...
                   auth_uids.append(uid)	#...with this UID
 
             # Cache the result of this authentication - valid as long as the
@@ -2398,8 +2346,8 @@ def main():
             # isn't reloaded - to avoid calling crypt() each time a requesting
             # process asks an authentication and nothing has changed since the
             # previous request
-            auth_cache[active_clients[cpid].user]=auth
-            auth_uids_cache[active_clients[cpid].user]=auth_uids
+            auth_cache[active_clients[cpid].user] = auth
+            auth_uids_cache[active_clients[cpid].user] = auth_uids
 
         # Add user request: if we have an active UIDs update and exactly one
         # more active UID in the new list of active UIDs, associate that new
@@ -2408,7 +2356,7 @@ def main():
 		active_uids_update and \
 		len(active_uids) == len(active_uids_prev) + 1:
 
-          new_encruids=encruids.copy()
+          new_encruids = encruids.copy()
 
           # Don't replace an existing user <-> UID association: if we find one,
           # notify the client handler and replace the request with a fresh void
@@ -2417,29 +2365,26 @@ def main():
           for registered_user, registered_uid_encr in new_encruids:
             if registered_user == active_clients[cpid].user and crypt(
 			  new_active_uid,
-			  registered_uid_encr
-			) == registered_uid_encr:
-              active_clients[cpid].main_out_p.send([ENCRUIDS_UPDATE_ERR_EXISTS])
-              active_clients[cpid].request=VOID_REQUEST
-              active_clients[cpid].expires=msg_tstamp + \
+			  registered_uid_encr) == registered_uid_encr:
+              active_clients[cpid].main_out_p.send(
+						(ENCRUIDS_UPDATE_ERR_EXISTS,))
+              active_clients[cpid].request = VOID_REQUEST
+              active_clients[cpid].expires = now + \
 			client_force_close_socket_timeout
               break;
 
           # Encrypt and associate the UID with the user, write the new
           # encrypted UIDs file and replace the request with fresh void request
           # and associated timeout
-          if active_clients[cpid].request!=VOID_REQUEST:
-
-            new_encruids.append([
-		  active_clients[cpid].user,
-		  crypt(new_active_uid, mksalt())
-		])
+          if active_clients[cpid].request != VOID_REQUEST:
+            new_encruids.append([active_clients[cpid].user, crypt(
+				new_active_uid, mksalt())])
             if write_encruids(new_encruids):
-              active_clients[cpid].main_out_p.send([ENCRUIDS_UPDATE_OK])
+              active_clients[cpid].main_out_p.send((ENCRUIDS_UPDATE_OK,))
             else:
-              active_clients[cpid].main_out_p.send([ENCRUIDS_UPDATE_ERR_WRITE])
-            active_clients[cpid].request=VOID_REQUEST
-            active_clients[cpid].expires=msg_tstamp + \
+              active_clients[cpid].main_out_p.send((ENCRUIDS_UPDATE_ERR_WRITE,))
+            active_clients[cpid].request = VOID_REQUEST
+            active_clients[cpid].expires = now + \
 			client_force_close_socket_timeout
 
         # Delete user request: if we have an active UIDs update and exactly one
@@ -2451,19 +2396,18 @@ def main():
 		active_uids_update and \
 		len(active_uids) == len(active_uids_prev) + 1)):
 
-          new_encruids=[]
+          new_encruids = []
 
           # Find one or more existing user <-> UID associations and remove
           # them if needed
-          assoc_deleted=False
+          assoc_deleted = False
           new_active_uid = (set(active_uids) - set(active_uids_prev)).pop() \
 				if active_uids_update else ""
           for registered_user, registered_uid_encr in encruids:
             if registered_user == active_clients[cpid].user and (
 			active_clients[cpid].expires == None or crypt(
 			  new_active_uid,
-			  registered_uid_encr
-			) == registered_uid_encr):
+			  registered_uid_encr) == registered_uid_encr):
               assoc_deleted=True
             else:
               new_encruids.append([registered_user, registered_uid_encr])
@@ -2474,17 +2418,18 @@ def main():
           # timeout
           if assoc_deleted:
             if write_encruids(new_encruids):
-              active_clients[cpid].main_out_p.send([ENCRUIDS_UPDATE_OK])
+              active_clients[cpid].main_out_p.send((ENCRUIDS_UPDATE_OK,))
             else:
-              active_clients[cpid].main_out_p.send([ENCRUIDS_UPDATE_ERR_WRITE])
+              active_clients[cpid].main_out_p.send((ENCRUIDS_UPDATE_ERR_WRITE,))
           else:
-            active_clients[cpid].main_out_p.send([ENCRUIDS_UPDATE_ERR_NONE])
+            active_clients[cpid].main_out_p.send((ENCRUIDS_UPDATE_ERR_NONE,))
 
-          active_clients[cpid].request=VOID_REQUEST
-          active_clients[cpid].expires=msg_tstamp + \
-			client_force_close_socket_timeout
+          active_clients[cpid].request = VOID_REQUEST
+          active_clients[cpid].expires = now + client_force_close_socket_timeout
 
 
+
+      # Process request timeouts:
 
       # If an authentication request has timed out or the authentication is
       # successful, notify the client handler and replace the request with
@@ -2492,38 +2437,33 @@ def main():
       # owner is the same as the user they request an authentication for, they
       # have the right to know their own UID, so send it along.
       if active_clients[cpid].request == WAITAUTH_REQUEST and \
-		(auth or active_clients[cpid].expires==None or \
-		msg_tstamp >= active_clients[cpid].expires):
-        active_clients[cpid].main_out_p.send([AUTH_RESULT, [AUTH_OK if auth
-		else AUTH_NOK, auth_uids if auth and \
-		active_clients[cpid].user == active_clients[cpid].pw_name \
-		else None]])
-        active_clients[cpid].request=VOID_REQUEST
-        active_clients[cpid].expires=msg_tstamp + \
-			client_force_close_socket_timeout
+		(auth or active_clients[cpid].expires == None or \
+		now >= active_clients[cpid].expires):
+        active_clients[cpid].main_out_p.send((AUTH_RESULT,
+		(AUTH_OK if auth else AUTH_NOK,
+		auth_uids if auth and \
+		active_clients[cpid].user == active_clients[cpid].pw_name else \
+		None)))
+        active_clients[cpid].request = VOID_REQUEST
+        active_clients[cpid].expires = now + client_force_close_socket_timeout
 
       # If an add user or del user request has timed out, notify the client
       # handler and replace the request with a fresh void request and
       # associated timeout
       if (active_clients[cpid].request == ADDUSER_REQUEST or \
 		active_clients[cpid].request == DELUSER_REQUEST) and \
-		(active_clients[cpid].expires==None or \
-		msg_tstamp >= active_clients[cpid].expires):
-        active_clients[cpid].main_out_p.send([ENCRUIDS_UPDATE_ERR_TIMEOUT])
-        active_clients[cpid].request=VOID_REQUEST
-        active_clients[cpid].expires=msg_tstamp + \
-			client_force_close_socket_timeout
+		(active_clients[cpid].expires == None or \
+		now >= active_clients[cpid].expires):
+        active_clients[cpid].main_out_p.send((ENCRUIDS_UPDATE_ERR_TIMEOUT,))
+        active_clients[cpid].request = VOID_REQUEST
+        active_clients[cpid].expires = now + client_force_close_socket_timeout
 
       # if a void request request has timed out, notify the client handler
       # and clear the request
       elif active_clients[cpid].request == VOID_REQUEST and \
-		msg_tstamp >= active_clients[cpid].expires:
-        active_clients[cpid].main_out_p.send([VOID_REQUEST_TIMEOUT])
-        active_clients[cpid].request=None
-
-    # Prevent duplicate active UIDs updates being sent to watcher clients
-    if msg[0] != MAIN_PROCESS_KEEPALIVE:
-      active_uids_update=False
+		now >= active_clients[cpid].expires:
+        active_clients[cpid].main_out_p.send((VOID_REQUEST_TIMEOUT,))
+        active_clients[cpid].request = None
 
 
 

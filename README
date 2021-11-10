@@ -70,225 +70,318 @@ The utilities included are:
 
 
 
-Installation instructions for the busy man
-------------------------------------------
+Installation / configuration instructions for the busy man
+----------------------------------------------------------
 
-These are instructions to install the utilities on Linux Mint, which is based
-on Ubuntu, and running systemd and the Cinnamon environment.
+The following are instructions to install the utilities on Linux Mint, which is
+based on Ubuntu, and running systemd and the Cinnamon environment.
 
 If your Linux system isn't Linux Mint, please modify the *.py Python scripts,
 *.service systemd service files and sirfidal_pam.config PAM configuration files
 accordingly. See the comments in the Python scrips for details and available
 configurable parameters.
 
-As root:
 
-  * Prerequisites:
 
-    * Python3 installation:
+Installation:
 
-       apt-get install python3
+  As root:
 
-    * Use with PC/SC readers:
+    * Common:
 
-       apt-get install pcscd pcsc-tools python3-pyscard
-
-       - Configure PC/SC for your readers. If pcsc_scan works, SiRFIDaL will
-         work also. See https://pcsclite.apdu.fr/
-
-       - Make sure watch_pcsc is set to True in sirfidal_server.py
-
-    * Use with a serial reader:
-
-       - Set serial_reader_dev_file to the device file corresponding to your
-         reader in sirfidal_server.py
-
-       - Make sure watch_serial is set to True in sirfidal_server.py
-
-    * Use with a HID reader [See Limitation below]:
-
-       - Set hid_reader_dev_file to the device file corresponding to your
-         reader in sirfidal_server.py
-
-       - Make sure watch_hid is set to True in sirfidal_server.py
-
-    * Use with an NFC-enabled Android device as a reader [See Android note]:
-
-       apt-get install adb
-
-       - Configure your Android device following the instructions below
-
-       - Make sure watch_adb is set to True in sirfidal_server.py
-
-       - When connecting your Android device to the computer running the
-         SiRFIDaL server for the first time, it will ask you if you want to
-         allow USB debugging: check "Always allow from this computer" and
-         tap Ok.
-
-    * Use with a Proxmark3 reader:
-
-       - Set pm3_client to the path of your Proxmark3 client's executable in
-         sirfidal_server.py
-
-       - Set pm3_reader_dev_file to the device file corresponding to your
-         Proxmark3 in sirfidal_server.py
-
-       - Enable of disable the different types of transponders you want to be
-         able to read with the pm3_read_* lines. Several types of transponders
-         may be enabled at the same time, but be aware that if you mix LF and HF
-         transponders, the reader will be extremely slow. For best performances,
-         enable only HF transponders or only LF transponders, but not both.
-
-       - Make sure watch_pm3 is set to True in sirfidal_server.py
-
-    * Use with a ChameleonMini or ChameleonTiny:
-
-       - Set chameleon_dev_file to the device file corresponding to your
-         ChameleonMini or ChameleonTiny in sirfidal_server.py
-
-       - Make sure you configure one of the slots in your ChameleonMini or
-         ChameleonTiny as a reader (configuration "ISO14443A_READER"). If no
-         slot is configured as a reader, the white LED will flash slowly to
-         indicate that the reader is unusable.
-
-       - Make sure watch_chameleon is set to True in sirfidal_server.py
-
-    * Use with a uFR or uFR Nano Online reader in slave mode:
-
-       - If you use a serial uFR reader, configure set ufr_device to
-         serial://<serial device file>:<baudrate> in sirfidal_server.py.
-
-       - If you use a uFR Nano Online reader, configure the reader in slave
-         mode to use UDP, TCP or websocket, then set ufr_device accordingly in
-         sirfidal_server.py:
-
-         udp://<ufr reader host>:<uart port>
-         tcp://<ufr reader host>:<uart port>
-         ws://<ufr reader host>:<uart port>
-
-       - If your uFR device doesn't support asynchronous ID sending mode (e.g.
-         uFR Nano Online in HTTP mode or through the serial port), set
-         ufr_polled_mode to True in sirfidal_server.py
-      
-       - Make sure watch_ufr is set to True in sirfidal_server.py
-
-    * Use with a reader that sends UIDs through GET or POST HTTP requests:
-
-       The SiRFIDaL server runs a small HTTP server to handle requests from
-       HTTP-aware readers:
-
-       - Set http_server_address to the address of the network interface
-         the SiRFIDaL server should bind to ("" means any interface) and
-         http_server_port to the port it should listen on for HTTP connections
-         in sirfidal_server.py
-
-       - Set the regular expressions to extract UIDs from GET or POST
-         requests in http_get_data_format and http_post_data_format in
-         sirfidal_server.py. Set either variable to None to disable the
-         corresponding HTTP method. The UID pattern in the regular expressions
-         should be the expression between parentheses.
-
-       - Set the reply that should be sent to the HTTP client after a GET or
-         POST request in sirfidal_server.py. Some readers behave differently
-         depending on what reply they are sent.
-
-       - Make sure watch_http is set to True in sirfidal_server.py
-
-    * Use with a networked reader that sends UIDs through a TCP server:
-
-       For networked RFID readers that send UIDs line by line, much like serial
-       readers, but makes them available through a TCP server.
-
-       - Set tcp_server_address to the address of the reader
-
-       - Set tcp_server_port to the port the reader is listening on
-
-       - Make sure watch_tcp is set to True in sirfidal_server.py
-
-    * Python3 modules needed:
-
-      apt-get install python3-pyscard       # Needed to use PC/SC readers
-      apt-get install python3-evdev         # Needed to use a HID reader
-      apt-get install python3-serial        # Needed to use a serial reader
+      apt-get install python3
       apt-get install python3-filelock
       apt-get install python3-psutil
-      apt-get install python3-cryptography  # Needed by sirfidal_autotype
-      apt-get install python3-xdo           # Needed by sirfidal_autotype and
-                                            # sirfidal_auto_send_enter_at_login
-      https://github.com/Giraut/pyuFR       # Needed to use a uFR reader
-         -> Copy pyufr.py in /usr/lib/python3/dist-packages/
 
-    * Optional external programs
+      cp *.py /usr/local/bin
+      cp *.service /lib/systemd/system
+      cp sirfidal_pam.config /usr/share/pam-configs
+      mkdir -p /usr/local/share/sounds/sirfidal
+      cp sounds/* /usr/local/share/sounds/sirfidal
 
-      apt-get install sox          # Needed by sirfidal_beep
-      apt-get install wmctrl       # Needed by sirfidal_auto_send_enter_at_login
+    * Additional to use PC/SC readers:
 
-  * Copy the files:
+      apt-get install pcscd pcsc-tools python3-pyscard
 
-    cp *.py /usr/local/bin
-    cp *.service /lib/systemd/system
-    cp sirfidal_pam.config /usr/share/pam-configs
-    mkdir -p /usr/local/share/sounds/sirfidal
-    cp sounds/* /usr/local/share/sounds/sirfidal
+      - Configure PC/SC for your readers. If pcsc_scan works, SiRFIDaL will
+        work also. See https://pcsclite.apdu.fr/
 
-  * Enable and start the systemd services:
+    * Additional to use serial readers or Chameleon devices:
 
-    systemctl enable sirfidal_server
-    systemctl start sirfidal_server
+      apt-get install python3-serial
 
-    systemctl enable sirfidal_beep                      # Optional
-    systemctl start sirfidal_beep                       # Optional
+    * Additional to use NFC-enabled Android devices as readers:
 
-    systemctl enable sirfidal_keyboard_wedge            # Optional
-    systemctl start sirfidal_keyboard_wedge             # Optional
+      apt-get install adb
 
-    systemctl enable sirfidal_keyboard_wedge            # Optional
-    systemctl start sirfidal_keyboard_wedge             # Optional
+      - Configure your Android device following the instructions below
 
-    systemctl enable sirfidal_auto_send_enter_at_login  # Optional
-    systemctl start sirfidal_auto_send_enter_at_login   # Optional
+      - When connecting your Android device to the computer running the
+        SiRFIDaL server for the first time, it will ask you if you want to
+        allow USB debugging: check "Always allow from this computer" and
+        tap Ok.
 
-  * Configure PAM for single factor authentication (password or RFID / NFC):
+    * Additional to use HID readers:
 
-    - Edit /usr/share/pam-configs/unix and add "nodelay" after "pam_unix.so"
-      in the Auth sections
+      apt-get install python3-evdev
 
-  * Configure PAM for two-factor authentication (password and RFID / NFC):
+    * Additional to use uFR readers:
 
-    - Edit /usr/share/pam-configs/unix and replace "success=end default=ignore"
-      with "success=ok" in the Auth sections
+      git clone https://github.com/Giraut/pyuFR
 
-  * Finalize PAM configuration
+      - Copy pyufr.py in /usr/lib/python3/dist-packages/
 
-    pam-auth-update
+    * Additional to use sirfidal_autotype.py:
 
-As a user:
+      apt-get install python3-cryptography
+      apt-get install python3-xdo
 
-  * Run the automatic screensaver locker / unlocker [Optional]:
+    * Additional to use sirfidal_auto_send_enter_at_login.py:
 
-    - In Preferences > Startup Applications, click on + > Custom command
-    - Enter the name "RFID NFC lock unlock screen" (or whatever you want)
-    - Enter the command "/usr/local/bin/sirfidal_autolockscreen.py"
-    - Click Add
-    - Select the entry and click on the gears icon to run it now
+      apt-get install wmctrl
+      apt-get install python3-xdo
 
-  * Run the autotyper [Optional]:
+    * Additional to use sirfical_beep.py:
 
-    - In Preferences > Startup Applications, click on + > Custom command
-    - Enter the name "RFID NFC autotype" (or whatever you want)
-    - Enter the command "/usr/local/bin/sirfidal_autotype.py"
-    - Click Add
-    - Select the entry and click on the gears icon to run it now
-    - In a terminal, run "sirfidal_autotype -w <string> [-n]" to configure a
-      string to send to a particular window
+      apt-get install sox
 
 
 
-Configuring an Android device as an external NFC reader for SiRFIDaL
---------------------------------------------------------------------
+Server configuration:
+
+  As root:
+
+    All the configuration options are located inside the sirfidal_server.py
+    file itself. However, you can override any of the settings with settings
+    similarly declared in a separate /etc/sirfical_server_parameters.py.
+
+    * Readers declararion:
+
+      All the readers the server should read UIDs from are declared in the
+      "readers" dictionary. The default values are reasonable / sample values
+      for one of each type of reader supported by the SiRFIDaL server.
+
+      You may declare several of the same type of reader. Simply reuse the same
+      type and parameters in a new section with a new reader name.
+      For example, it you want to use 2 serial readers with different baudrates:
+
+      ...
+      "serial_reader_#1":   {
+        "enabled":          True,
+        "type":             "serial",
+        "uids_timeout":     1, #s
+        "device":           "/dev/ttyUSB0",
+        "baudrate":         9600,
+        "bytesize":         8,
+        "parity":           "N",
+        "stopbits":         1
+      },
+
+      "serial_reader_#2":   {
+        "enabled":          True,
+        "type":             "serial",
+        "uids_timeout":     1, #s
+        "device":           "/dev/ttyUSB1",
+        "baudrate":         115200,
+        "bytesize":         8,
+        "parity":           "N",
+        "stopbits":         1
+      },
+      ...
+
+    * Configuration options common to all types of readers:
+
+      - enabled:        If set to True, the reader is enabled. If set to False,
+                        the rest of the declaration is ignored.
+      - type:           Type of reader
+      - uids_timeout:   If set to a value in seconds, the UIDs read by that
+                        reader exist in the server as active UIDs for that
+                        number of seconds, then time out unless the reader
+                        re-reads them before they time out. In the case of
+                        repeating readers that send the same UIDs repeatedly,
+                        this maintains the UIDs active as long as the
+                        transponders are read. In the case of one-shot readers,
+                        this maintains the UIDs active for the duration of the
+                        timeout only.
+                        If set to None, the UIDs sent by the reader never time
+                        out.  The reader or the SiRFIDaL reader listener must
+                        actively inform the server when the UIDs become
+                        inactive. The reader is said to be persistent.
+
+    * Configuration options for USB PC/SC readers:
+
+      - poll_every:     Delay in seconds between reader polls
+
+    * Configuration options for serial readers:
+
+      - device:         Serial device file
+      - baudate:        Serial communication speed
+      - bytesize:       7 or 8 bits
+      - parity:         "N" for none, "E" for even, "O" for odd, "M" for mark,
+                        "S" for space
+      - stopbits:       1, 1.5 or 2
+
+    * Configuration options for HID readers - aka keyboard wedges:
+
+      - device:         HID input device file
+
+    * Configuration options for Android devices used as NFC readers:
+
+      - client:         Full path to the ADB client executable
+      - logcat_prefix:  Prefix used to spot UIDs reported by the Android Tasker
+                        script (see below). This shouldn't have to be changed
+                        unless the prefix is changed in the Tasker script
+                        accordingly.
+
+    * Configuration options for Proxmark3 devices used as NFC or RFID readers:
+
+      - device:         Serial device file of the Proxmark3
+      . client:         Full path to the Proxmark3 client executable
+      - client_workdir: Working directory in which to run the Proxmark3 client,
+                        where it will try to log things to a fake proxmark3.log
+                        that is in fact a symlink to /dev/null
+      - client_timeout: How long the Proxmark3 client may stay silent before
+                        it's considered crashed and restarted
+      - read_iso14443a:	If set to True, read ISO 14443A transponder UIDs (HF)
+      - read_iso15693:	If set to True, read ISO 15693 transponder UIDs (HF)
+      - read_em410x:	If set to True, read EM410x transponder UIDs (LF)
+      - read_indala:	If set to True, read HID Indala transponder UIDs (LF)
+      - read_fdx:       If set to True, read FDX-B transponder UIDs (LF)
+
+        Note: The above transponder type flags may be combined. However, note
+              that the more types you combine, the less responsive the
+              Proxmark3 will becomes. Additionally, if you combine HF and LF
+              transponders, the Proxmark3's FPGA will be reprogrammed at each
+              polling cycle to switch back and forth from HF to LF, which is
+              not only very slow, but also quite harmful for the FPGA.
+              It is highly recommended to stick to HF or LF transponders.
+
+    * Configuration options for Chameleon Mini / Tiny devices:
+
+      - device:         Serial device file of the Chameleon device
+
+    * Configuration options for uFR or uFR Nano Online in slave mode:
+
+      - device:         Unified pyuFR-style device specification
+      - poll_every:     If set to a value in second, the uFR reader is driven
+                        in polled mode, and the value is the delay between
+                        polls. If set to None, the uFR reader is driven in
+                        asynchronous mode.
+      - poll_powersave: If the uFR device is driven in polled mode, put the
+                        reader to sleep between polls, to reduce energy usage
+      - debounce_delay: Delay before reporting no active UID to the server in
+                        asynchronous mode. This prevents the active UID
+                        flitting on and off at high speed if the transponder
+                        doesn't couple quite well enough with the reader if it
+                        leaves the field too slowly, due to the very fast
+                        nature of asynchronous scanning.
+      - no_rgb1:	Color to set the uFR Nano Online-specific RGB LED #1 to,
+                        or None
+      - no_rgb2_on:	Color to set the uFR Nano Online-specific RGB LED #2 to
+                        when a transponder is in the field, or None
+      - no_rgb2_off:	Color to set the uFR Nano Online-specific RGB LED #2 to
+                        when no transponder is in the field, or None
+      - conn_watchdog:  How many seconds of silence before the connection to
+                        the uFR reader is rechecked in asynchronous mode
+
+    * Configuration options for the HTTP server for networked readers sending
+      UIDs using the HTTP GET or POST methods:
+
+      - bind_address:   Address (interface) to bind the server to
+      - bind_port:      Port to bind the server to
+      - get_data_fmt:   Regular expression used to extract UIDs from
+                        GET request data, or None to disable the GET method
+      - get_reply:      Fixed string to send to the client after it sends a
+                        UID using the GET method
+      - post_data_fmt:  Regular expression used to extract UIDs from
+                        POST data, or None to disable the POST method
+      - post_reply:     Fixed string to send to the client after it sends a
+                        UID using the POST method
+
+    * TCP client to get UIDs from a reader running a TCP server
+
+      - server_address: Address of the reader
+      - server_port:    Port of the reader
+      - tcp_keepalive:  How many seconds of silence before the TCP connection
+                        is rechecked by sending something to the reader,
+                        or None to disable
+
+    * Enable and start the SiRFIDaL server's systemd services:
+
+      systemctl enable sirfidal_server
+      systemctl start sirfidal_server
+
+
+
+Optional systemd services:
+
+  As root:
+
+    * Enabling and starting the SiRFIDaL beep service:
+
+      systemctl enable sirfidal_beep
+      systemctl start sirfidal_beep
+
+    * Enabling and starting the SiRFIDaL keyboard wedge simulation service:
+
+      systemctl enable sirfidal_keyboard_wedge
+      systemctl start sirfidal_keyboard_wedge
+
+    * Enabling and starting the SiRFIDaL *auto send ENTER at login" service:
+
+      systemctl enable sirfidal_auto_send_enter_at_login
+      systemctl start sirfidal_auto_send_enter_at_login
+
+
+
+PAM configuration:
+
+  As root:
+
+    * Configure PAM for single factor authentication (password or RFID / NFC):
+
+      - Edit /usr/share/pam-configs/unix and add "nodelay" after "pam_unix.so"
+        in the Auth sections
+
+    * Configure PAM for two-factor authentication (password and RFID / NFC):
+
+      - Edit /usr/share/pam-configs/unix and replace
+        "success=end default=ignore" with "success=ok" in the Auth sections
+
+    * Finalize the PAM configuration
+
+      pam-auth-update
+
+
+
+Optional user utilities configuration:
+
+  As user:
+
+    * Running the automatic screensaver locker / unlocker:
+
+      - In Preferences > Startup Applications, click on + > Custom command
+      - Enter the name "RFID NFC lock unlock screen" (or whatever you want)
+      - Enter the command "/usr/local/bin/sirfidal_autolockscreen.py"
+      - Click Add
+      - Select the entry and click on the gears icon to run it now
+
+    * Running the autotyper:
+
+      - In Preferences > Startup Applications, click on + > Custom command
+      - Enter the name "RFID NFC autotype" (or whatever you want)
+      - Enter the command "/usr/local/bin/sirfidal_autotype.py"
+      - Click Add
+      - Select the entry and click on the gears icon to run it now
+      - In a terminal, run "sirfidal_autotype -w <string> [-n]" to configure a
+        string to send to a particular window
+
+
+
+Configuring an Android device as an external NFC reader for SiRFIDaL:
 
   * In Settings > System, enable Developer options and USB debugging:
-    https://developer.android.com/studio/debug/dev-options 
+    https://developer.android.com/studio/debug/dev-options
 
   * Install Tasker:
     https://play.google.com/store/apps/details?id=net.dinglisch.android.taskerm
@@ -320,49 +413,26 @@ Configuring an Android device as an external NFC reader for SiRFIDaL
         then tap <-
       . In the Task Edit window, tap <-
       . In the main screen, tap the tick mark to save everything
-      
-
-
-Limitation when using a one-shot reader
-------------------------------------------
-
-HID readers - also called "keyboard wedges" - are one-shot instead of
-repeating devices. This means they send the UID of a transponder they've read
-only once, then stay quiet until a new read is performed.
-
-That's because they're made to emulate keyboards, to automatically enter UIDs
-in a word processor or a spreadsheet. Obviously you don't want the reader to
-fill up your document with identical UIDs.
-
-As a result, with those readers, it's impossible to detect the presence of a
-transponder continuously. SiRFIDaL emulates a repeating device by pretending
-the transponder stays on the reader for a short period, then leaves the reader.
-
-This emulation is sufficient for single-shot authentication. However, it
-breaks SiRFIDaL clients that rely on continuously probing active UIDs: for
-instance, sirfidal_autolockscreen won't work properly in persistent mode, and
-sirfidal_beep will play a "down" beep while the transponder is still on the
-reader.
 
 
 
-Android note regarding persistent mode emulation
-------------------------------------------------
+Note regarding persistence in Android devices:
 
-To provide persistent mode with an Android device used as an external NFC
-reader - i.e. to emulate a PC/SC reader or a repeating serial device, that
-continuously reports whether a transponder is on the device - SiRFIDaL abuses
-the Android system log, and uses it to catch "tag off" debug events.
+  To provide persistent mode with an Android device used as an external NFC
+  reader - i.e. to emulate a PC/SC reader or a repeating serial device, that
+  continuously reports whether a transponder is on the device - SiRFIDaL abuses
+  the Android system log and uses it to catch "tag off" debug events.
 
-This is a bit dirty however, and it may not always work, as Google may modify
-or remove that particular logging without notice at any time. If the feature
-fails to work properly, the symptom is SiRFIDaL "seeing" a transponder getting
-read, but failing to see it leave the reader.
+  This is a bit dirty however, and it may not always work, as Google may modify
+  or remove that particular logging without notice at any time. If the feature
+  fails to work properly, the symptom is SiRFIDaL "seeing" a transponder getting
+  read, but failing to see it leave the reader.
 
-If you experience that problem, you can disable persistent mode by setting
-adb_persistent_mode to False in sirfidal_server.py. When persistent mode is
-disabled, the Android device still works as an external NFC reader, but
-degrades to the equivalent of a keyboard wedge (see above).
+  If you experience that problem, you can disable persistent mode by changing
+  uids_timeout from None to some value in seconds (for example 1) so that active
+  UIDs read by the Tasker script time out on their own. When persistent mode is
+  disabled, the Android device still works as an external NFC reader, but
+  degrades to the equivalent of a keyboard wedge or non-repeating serial reader.
 
 
 
