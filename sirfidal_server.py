@@ -2051,7 +2051,7 @@ def main():
   enabled_listeners = {}
 
   for name in readers:
-    print(name)
+
     if not name.isprintable():
       print("Error: invalid reader name {}. Giving up.".format(name))
       return -1
