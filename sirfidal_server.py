@@ -2052,13 +2052,13 @@ def main():
 
   for name in readers:
 
+    if not name.isprintable():
+      print("Error: invalid reader name {}. Giving up.".format(name))
+      return -1
+
     r = param_check(readers[name], "enabled", (bool,), None)
     if r:
       print("Error: {} in declaration of reader {}. Giving up.".format(r, name))
-      return -1
-
-    if not name.isprintable():
-      print("Error: invalid reader name {}. Giving up.".format(name))
       return -1
 
     if readers[name]["enabled"]:
