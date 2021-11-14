@@ -4,6 +4,10 @@ the background and provides secure authentication services for local processes
 wishing to authenticate a user against a RFID or NFC UID, or manipulate the
 list UID <-> user associations without exposing the UIDs to the processes.
 
+By default, only startup messages and error messages are printed out. To output
+extended debug messages, invoke with -d / --debug. To suppress startup
+messages, invoke with -s / --silent.
+
 The script performs the following functions:
 
 * Background functions
@@ -275,6 +279,7 @@ import json
 import struct
 import psutil
 import inspect
+import argparse
 from pty import openpty
 from select import select
 from time import time, sleep
@@ -314,11 +319,16 @@ ENCRUIDS_UPDATE_ERR_WRITE   = 19
 CLIENT_HANDLER_STOP_REQUEST = 20
 CLIENT_HANDLER_STOP         = 21
 
+VERBOSITY_SILENT = 0
+VERBOSITY_NORMAL = 1
+VERBOSITY_DEBUG  = 2
+
 
 
 ### Global variables
 encruids_file_mtime =  None
 encruids = []
+verbosity = VERBOSITY_NORMAL
 
 
 
@@ -339,6 +349,17 @@ class client:
 
 
 ### subroutines / subprocesses
+def log(min_verbosity, fct_id, msg):
+  """Display the name of the calling function and its message if the verbosity
+  level is at least the message's minimum verbosity.
+  """
+
+  if verbosity >= min_verbosity:
+    print("[{}] {}{}".format(inspect.stack()[1].function,
+				"[{}] ".format(fct_id) if fct_id else "", msg))
+
+
+
 def pcsc_listener(main_in_q, listener_id, params):
   """Periodically read the UIDs from one or more PC/SC readers and send the
   list of active UIDs to the main process
@@ -348,6 +369,7 @@ def pcsc_listener(main_in_q, listener_id, params):
   import smartcard.scard as sc
 
   setproctitle("sirfidal_listener_{}".format(listener_id))
+  log(VERBOSITY_NORMAL, listener_id, "Started")
 
   # Parameters
   poll_every = params["poll_every"]
@@ -370,6 +392,7 @@ def pcsc_listener(main_in_q, listener_id, params):
       r, hcontext = sc.SCardEstablishContext(sc.SCARD_SCOPE_USER)
 
       if r != sc.SCARD_S_SUCCESS:
+        log(VERBOSITY_DEBUG, listener_id, "Cannot get context")
         del(hcontext)
         hcontext = None
 
@@ -378,6 +401,7 @@ def pcsc_listener(main_in_q, listener_id, params):
       _, readers = sc.SCardListReaders(hcontext, [])
 
       if not readers:
+        log(VERBOSITY_DEBUG, listener_id, "No readers")
         sc.SCardReleaseContext(hcontext)
         del(hcontext)
         hcontext = None
@@ -396,7 +420,8 @@ def pcsc_listener(main_in_q, listener_id, params):
       except KeyboardInterrupt:
         return -1
 
-      except:
+      except Exception as e:
+        log(VERBOSITY_DEBUG, listener_id, e)
         sc.SCardReleaseContext(hcontext)
         del(hcontext)
         hcontext = None
@@ -410,7 +435,8 @@ def pcsc_listener(main_in_q, listener_id, params):
       except KeyboardInterrupt:
         return -1
 
-      except:
+      except Exception as e:
+        log(VERBOSITY_DEBUG, listener_id, e)
         del(hcontext)
         hcontext = None
         readers = []
@@ -420,11 +446,9 @@ def pcsc_listener(main_in_q, listener_id, params):
       for reader in readers:
         try:
           hresult, hcard, dwActiveProtocol = sc.SCardConnect(hcontext,
-				reader,
-				sc.SCARD_SHARE_SHARED,
+				reader, sc.SCARD_SHARE_SHARED,
 				sc.SCARD_PROTOCOL_T0 | sc.SCARD_PROTOCOL_T1)
-          hresult, response = sc.SCardTransmit(hcard,
-						dwActiveProtocol,
+          hresult, response = sc.SCardTransmit(hcard, dwActiveProtocol,
 						[0xFF, 0xCA, 0x00, 0x00, 0x00])
 
           uid = "".join("{:02X}".format(b) for b in response)
@@ -438,8 +462,8 @@ def pcsc_listener(main_in_q, listener_id, params):
         except KeyboardInterrupt:
           return -1
 
-        except:
-          pass
+        except Exception as e:
+          log(VERBOSITY_DEBUG, listener_id, e)
 
       # Send the list of active UIDs to the main process
       main_in_q.put((LISTENER_UIDS_UPDATE, (listener_id, active_uids)))
@@ -463,6 +487,7 @@ def serial_listener(main_in_q, listener_id, params):
   import serial
 
   setproctitle("sirfidal_listener_{}".format(listener_id))
+  log(VERBOSITY_NORMAL, listener_id, "Started")
 
   # Parameters
   device = params["device"]
@@ -506,7 +531,8 @@ def serial_listener(main_in_q, listener_id, params):
       except KeyboardInterrupt:
         return -1
 
-      except:
+      except Exception as e:
+        log(VERBOSITY_DEBUG, listener_id, e)
         serdev = None
 
     if serdev is None:
@@ -520,10 +546,13 @@ def serial_listener(main_in_q, listener_id, params):
     except KeyboardInterrupt:
       return -1
 
-    except:
-      c = ""
+    except Exception as e:
+      log(VERBOSITY_DEBUG, listener_id, e)
+      close_device = True
+      continue
 
     if not c:
+      log(VERBOSITY_DEBUG, listener_id, "Error reading from {}".format(device))
       close_device = True
       continue
 
@@ -550,6 +579,7 @@ def hid_listener(main_in_q, listener_id, params):
   from evdev import InputDevice, categorize, ecodes
 
   setproctitle("sirfidal_listener_{}".format(listener_id))
+  log(VERBOSITY_NORMAL, listener_id, "Started")
 
   # Parameters
   device = params["device"]
@@ -605,7 +635,8 @@ def hid_listener(main_in_q, listener_id, params):
       except KeyboardInterrupt:
         return -1
 
-      except:
+      except Exception as e:
+        log(VERBOSITY_DEBUG, listener_id, e)
         close_device = True
         continue
 
@@ -614,7 +645,8 @@ def hid_listener(main_in_q, listener_id, params):
       select([hiddev.fd], [], [], None)
       events = list(hiddev.read())
 
-    except:
+    except Exception as e:
+      log(VERBOSITY_DEBUG, listener_id, e)
       close_device = True
       continue
 
@@ -657,15 +689,16 @@ def android_listener(main_in_q, listener_id, params):
   """
 
   setproctitle("sirfidal_listener_{}".format(listener_id))
+  log(VERBOSITY_NORMAL, listener_id, "Started")
 
   proc = [None]
 
-  # SIGCHLD handler to reap defunct adb processes when they quit
-  def sigchld_handler(sig, fname):
+  # SIGCHLD handler to reap defunct adb processes
+  def adb_listener_sigchld_handler(sig, fname):
+    log(VERBOSITY_DEBUG, listener_id, "ADB client died")
     os.wait()
-    proc[0] = None
 
-  signal(SIGCHLD, sigchld_handler)
+  signal(SIGCHLD, adb_listener_sigchld_handler)
 
   # Parameters
   persistent_mode = params["uids_timeout"] is None
@@ -716,7 +749,8 @@ def android_listener(main_in_q, listener_id, params):
       except KeyboardInterrupt:
         return -1
 
-      except:
+      except Exception as e:
+        log(VERBOSITY_DEBUG, listener_id, e)
         proc[0] = None
 
     if proc[0] is None:
@@ -733,10 +767,13 @@ def android_listener(main_in_q, listener_id, params):
     except KeyboardInterrupt:
       return -1
 
-    except:
-      b = ""
+    except Exception as e:
+      log(VERBOSITY_DEBUG, listener_id, e)
+      kill_client = True
+      continue
 
     if not b:
+      log(VERBOSITY_DEBUG, listener_id, "Error reading ADB client's stdout")
       kill_client = True
       continue
 
@@ -791,16 +828,16 @@ def proxmark3_listener(main_in_q, listener_id, params):
   """
 
   setproctitle("sirfidal_listener_{}".format(listener_id))
+  log(VERBOSITY_NORMAL, listener_id, "Started")
 
   proc = [None]
 
-  # SIGCHLD handler to reap defunct proxmark3 processes when they quit or when
-  # we kill them
-  def sigchld_handler(sig, fname):
+  # SIGCHLD handler to reap defunct proxmark3 processes
+  def proxmark3_listener_sigchld_handler(sig, fname):
+    log(VERBOSITY_DEBUG, listener_id, "Proxmark3 client died")
     os.wait()
-    proc[0] = None
 
-  signal(SIGCHLD, sigchld_handler)
+  signal(SIGCHLD, proxmark3_listener_sigchld_handler)
 
   # Parameters
   client_workdir = params["client_workdir"]
@@ -907,7 +944,8 @@ def proxmark3_listener(main_in_q, listener_id, params):
       except KeyboardInterrupt:
         return -1
 
-      except:
+      except Exception as e:
+        log(VERBOSITY_DEBUG, listener_id, e)
         proc[0] = None
 
     if proc[0] is None:
@@ -928,10 +966,14 @@ def proxmark3_listener(main_in_q, listener_id, params):
         except KeyboardInterrupt:
           return -1
 
-        except:
-          b = ""
+        except Exception as e:
+          log(VERBOSITY_DEBUG, listener_id, e)
+          kill_client = True
+          continue
 
         if not b:
+          log(VERBOSITY_DEBUG, listener_id,
+			"Error reading Proxmark3 client's stdout")
           kill_client = True
           continue
 
@@ -948,13 +990,15 @@ def proxmark3_listener(main_in_q, listener_id, params):
 
       # Timeout: the Proxmark3 client is unresponsive
       else:
+        log(VERBOSITY_DEBUG, listener_id, "Proxmark3 client unresponsive")
         kill_client = True
         continue
 
     except KeyboardInterrupt:
       return -1
 
-    except:
+    except Exception as e:
+      log(VERBOSITY_DEBUG, listener_id, e)
       kill_client = True
       continue
 
@@ -993,8 +1037,18 @@ def proxmark3_listener(main_in_q, listener_id, params):
           poll_start_tstamp = time()
 
         # Send the next command in the sequence
-        os.write(pty_master, (cmd_sequence[cmd_sequence_i] + "\r").
+        try:
+          os.write(pty_master, (cmd_sequence[cmd_sequence_i] + "\r").
 				encode("ascii"))
+
+        except KeyboardInterrupt:
+          return -1
+
+        except Exception as e:
+          log(VERBOSITY_DEBUG, listener_id, e)
+          kill_client = True
+          continue
+
         cmd_sequence_i += 1
 
       uid = None
@@ -1036,6 +1090,7 @@ def chameleon_listener(main_in_q, listener_id, params):
   import serial
 
   setproctitle("sirfidal_listener_{}".format(listener_id))
+  log(VERBOSITY_NORMAL, listener_id, "Started")
 
   # Parameters
   device = params["device"]
@@ -1075,7 +1130,8 @@ def chameleon_listener(main_in_q, listener_id, params):
       except KeyboardInterrupt:
         return -1
 
-      except:
+      except Exception as e:
+        log(VERBOSITY_DEBUG, listener_id, e)
         chamdev = None
 
     if chamdev is None:
@@ -1106,10 +1162,13 @@ def chameleon_listener(main_in_q, listener_id, params):
       except KeyboardInterrupt:
         return -1
 
-      except:
-        sent = -1
+      except Exception as e:
+        log(VERBOSITY_DEBUG, listener_id, e)
+        close_device = True
+        continue
 
       if sent != len(cmd):
+        log(VERBOSITY_DEBUG, listener_id, "Error writing to {}".format(device))
         close_device = True
         continue
 
@@ -1124,10 +1183,13 @@ def chameleon_listener(main_in_q, listener_id, params):
     except KeyboardInterrupt:
       return -1
 
-    except:
-      c = ""
+    except Exception as e:
+      log(VERBOSITY_DEBUG, listener_id, e)
+      close_device = True
+      continue
 
     if not c:
+      log(VERBOSITY_DEBUG, listener_id, "Error reading from {}".format(device))
       close_device = True
       continue
 
@@ -1166,8 +1228,9 @@ def chameleon_listener(main_in_q, listener_id, params):
 
         # If we got an error getting the slot number, close the reader
         if slot == -1:
+          log(VERBOSITY_DEBUG, listener_id, "Couldn't get slot number")
           close_device = True
-          break
+          continue
 
         start_slot = slot
         reader_state = 3
@@ -1207,8 +1270,9 @@ def chameleon_listener(main_in_q, listener_id, params):
 
       # Invalid response
       else:
+        log(VERBOSITY_DEBUG, listener_id, "Invalid response")
         close_device = True
-        break
+        continue
 
 
 
@@ -1221,6 +1285,7 @@ def ufr_listener(main_in_q, listener_id, params):
   import pyufr
 
   setproctitle("sirfidal_listener_{}".format(listener_id))
+  log(VERBOSITY_NORMAL, listener_id, "Started")
 
   # Parameters
   device = params["device"]
@@ -1285,8 +1350,9 @@ def ufr_listener(main_in_q, listener_id, params):
           ufr.set_card_id_send_conf(True)
           recheck_conn_at_tstamp = start_tstamp + conn_recheck_every
 
-      except:
-        sleep(2)	# Wait a bit to reopen the device
+      except Exception as e:
+        log(VERBOSITY_DEBUG, listener_id, e)
+        close_device = True
         continue
 
       red_led_state = True
@@ -1306,7 +1372,8 @@ def ufr_listener(main_in_q, listener_id, params):
         try:
           ufr.get_firmware_version()
           recheck_conn_at_tstamp = start_tstamp + conn_recheck_every
-        except:
+        except Exception as e:
+          log(VERBOSITY_DEBUG, listener_id, e)
           close_device = True
           continue
 
@@ -1343,15 +1410,16 @@ def ufr_listener(main_in_q, listener_id, params):
           pass
         return -1
 
-      except:
+      except Exception as e:
+        log(VERBOSITY_DEBUG, listener_id, e)
         close_device = True
         continue
 
       end_tstamp = time()
 
-      # Send the UIDs and set the LEDs depending on whether one or more UID is
-      # active. But if we have no active UIDs and we're in async mode, only do
-      # so after a debounce delay
+      # Send the UIDs and change the state of the LEDs depending on whether one
+      # or more UID is active. But if we have no active UIDs and we're in async
+      # mode, only do so after a debounce delay
       if not polled_mode and not uids and uids_off_debounce_tstamp is None:
         uids_off_debounce_tstamp = end_tstamp + debounce_delay
 
@@ -1371,7 +1439,8 @@ def ufr_listener(main_in_q, listener_id, params):
 		not (polled_mode and polled_power_saving)):
       try:
         ufr.red_light_control(red_led_state)
-      except:
+      except Exception as e:
+        log(VERBOSITY_DEBUG, listener_id, e)
         pass
       red_led_state_prev = red_led_state
 
@@ -1379,7 +1448,8 @@ def ufr_listener(main_in_q, listener_id, params):
     if no_rgb1 is not None and no_rgb2 is not None and no_rgb2 != no_rgb2_prev:
       try:
         ufr.esp_set_display_data(no_rgb1, no_rgb2, 0)
-      except:
+      except Exception as e:
+        log(VERBOSITY_DEBUG, listener_id, e)
         pass
       no_rgb2_prev = no_rgb2
 
@@ -1401,6 +1471,7 @@ def http_listener(main_in_q, listener_id, params):
   from http.server import BaseHTTPRequestHandler, HTTPServer
 
   setproctitle("sirfidal_listener_{}".format(listener_id))
+  log(VERBOSITY_NORMAL, listener_id, "Started")
 
   # Parameters
   bind_addr =  params["bind_address"]
@@ -1460,11 +1531,28 @@ def http_listener(main_in_q, listener_id, params):
     def log_message(self, format, *args):
       return
 
-  # Set up the HTTP server
-  httpd = HTTPServer((bind_addr, bind_port), handler_class)
+  while True:
 
-  # Run the HTTP server
-  httpd.serve_forever()
+    # Set up the HTTP server
+    try:
+      httpd = HTTPServer((bind_addr, bind_port), handler_class)
+
+    except Exception as e:
+      log(VERBOSITY_DEBUG, listener_id, e)
+      sleep(2)	# Wait a bit before trying to set up the HTTP server again
+      continue
+
+    # Run the HTTP server
+    try:
+      httpd.serve_forever()
+
+    except Exception as e:
+      log(VERBOSITY_DEBUG, listener_id, e)
+      try:
+        httpd.server_close()
+      except:
+        pass
+      sleep(2)	# Wait a bit before trying to set up the HTTP server again
 
 
 
@@ -1477,6 +1565,7 @@ def tcp_listener(main_in_q, listener_id, params):
   from socket import socket, timeout, AF_INET, SOCK_STREAM
 
   setproctitle("sirfidal_listener_{}".format(listener_id))
+  log(VERBOSITY_NORMAL, listener_id, "Started")
 
   # Parameters
   server_addr =  params["server_address"]
@@ -1513,12 +1602,10 @@ def tcp_listener(main_in_q, listener_id, params):
       except KeyboardInterrupt:
         return -1
 
-      except:
-        sock = None
-
-    if sock is None:
-      sleep(2)	# Wait a bit to reopen the socket
-      continue
+      except Exception as e:
+        log(VERBOSITY_DEBUG, listener_id, e)
+        close_socket = True
+        continue
 
     # Read UIDs from the socket
     rlines=[]
@@ -1534,10 +1621,13 @@ def tcp_listener(main_in_q, listener_id, params):
         except KeyboardInterrupt:
           return -1
 
-        except:
-          b = ""
+        except Exception as e:
+          log(VERBOSITY_DEBUG, listener_id, e)
+          close_socket = True
+          continue
 
         if not b:
+          log(VERBOSITY_DEBUG, listener_id, "Error reading from socket")
           close_socket = True
           continue
 
@@ -1560,7 +1650,8 @@ def tcp_listener(main_in_q, listener_id, params):
         except KeyboardInterrupt:
           return -1
 
-        except:
+        except Exception as e:
+          log(VERBOSITY_DEBUG, listener_id, e)
           close_socket = True
 
         continue
@@ -1568,7 +1659,8 @@ def tcp_listener(main_in_q, listener_id, params):
     except KeyboardInterrupt:
       return -1
 
-    except:
+    except Exception as e:
+      log(VERBOSITY_DEBUG, listener_id, e)
       close_socket = True
       continue
 
@@ -1588,6 +1680,7 @@ def server(main_in_q, sock):
   """
 
   setproctitle("sirfidal_server_client_server")
+  log(VERBOSITY_NORMAL, "", "Started")
 
   # SIGCHLD handler to reap defunct client handlers when they exit
   def sigchld_handler(sig, fname):
@@ -2053,12 +2146,13 @@ def main():
   for name in readers:
 
     if not name.isprintable():
-      print("Error: invalid reader name {}. Giving up.".format(name))
+      log(VERBOSITY_SILENT, "", "Error: invalid reader name {}".format(name))
       return -1
 
     r = param_check(readers[name], "enabled", (bool,), None)
     if r:
-      print("Error: {} in declaration of reader {}. Giving up.".format(r, name))
+      log(VERBOSITY_SILENT, "", "Error: {} in declaration of reader {}"
+				.format(r, name))
       return -1
 
     if readers[name]["enabled"]:
@@ -2066,8 +2160,8 @@ def main():
       r = param_check(readers[name], "type", (str,),
 			lambda v: v in valid_reader_types)
       if r:
-        print("Error: {} in declaration of reader {}. Giving up."
-		.format(r, name))
+        log(VERBOSITY_SILENT, "", "Error: {} in declaration of reader {}"
+				.format(r, name))
         return -1
 
       reader_type = readers[name]["type"]
@@ -2077,8 +2171,8 @@ def main():
       r = param_check(readers[name], "uids_timeout", (type(None), int, float),
 			lambda v: v is None or v > 0)
       if r:
-        print("Error: {} in declaration of reader {}. Giving up."
-		.format(r, name))
+        log(VERBOSITY_SILENT, "", "Error: {} in declaration of reader {}"
+				.format(r, name))
         return -1
 
       for p in reader_params_check_params[reader_type]:
@@ -2086,8 +2180,8 @@ def main():
 			reader_params_check_params[reader_type][p][0],
 			reader_params_check_params[reader_type][p][1])
         if r:
-          print("Error: {} in declaration of reader {}. Giving up."
-		.format(r, name))
+          log(VERBOSITY_SILENT, "", "Error: {} in declaration of reader {}"
+				.format(r, name))
           return -1
 
       if reader_type == "proxmark3":
@@ -2097,15 +2191,15 @@ def main():
 
         if os.path.exists(pm3_logfile):
           if not os.path.islink(pm3_logfile):
-            print("Error: {} already exists and isn't a symlink. "
-			"Giving up.".format(pm3_logfile))
+            log(VERBOSITY_SILENT, "", "Error: {} already exists and isn't "
+					"a symlink".format(pm3_logfile))
             return -1
         else:
           try:
             os.symlink(os.devnull, pm3_logfile)
           except:
-            print("Error: cannot symlink {} to {}. "
-			"Giving up.".format(pm3_logfile, os.devnull))
+            log(VERBOSITY_SILENT, "", "Error: cannot symlink {} to {}. "
+					.format(pm3_logfile, os.devnull))
             return -1
 
   # Set up the server's socket
@@ -2116,7 +2210,7 @@ def main():
     with socklock.acquire(timeout = 1):
       os.unlink(socket_path)
   except Timeout:
-    print("Error: socket locked. Giving up.")
+    log(VERBOSITY_SILENT, "", "Error: socket locked")
     return -1
   except:
     pass
@@ -2133,7 +2227,7 @@ def main():
   os.umask(0o077)
 
   # Start the server
-  Process(target=server, args=(main_in_q, sock,)).start()
+  Process(target = server, args=(main_in_q, sock,)).start()
 
   # Start the enabled listeners
   listener_uids_timeout = {}
@@ -2195,6 +2289,8 @@ def main():
 
     # Process the message if we have one
     if msg is not None:
+
+      log(VERBOSITY_DEBUG, "", "Received message: {}".format(msg))
 
       # The message is an update of the active UIDs from one of the listeners
       if msg[0] == LISTENER_UIDS_UPDATE:
@@ -2471,4 +2567,28 @@ def main():
 
 ### Jump to the main routine
 if __name__ == "__main__":
+
+  # Parse the command line arguments
+  argparser = argparse.ArgumentParser()
+
+  mutexargs = argparser.add_mutually_exclusive_group()
+
+  mutexargs.add_argument(
+	"-s", "--silent",
+	help = "Only output fatal error messages",
+	action = "store_true")
+
+  mutexargs.add_argument(
+	"-d", "--debug",
+	help = "Output extended debug messages",
+	action = "store_true")
+
+  args = argparser.parse_args()
+
+  if args.silent:
+    verbosity = VERBOSITY_SILENT
+
+  elif args.debug:
+    verbosity = VERBOSITY_DEBUG
+
   sys.exit(main())

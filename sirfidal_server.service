@@ -3,7 +3,7 @@ Description=SiRFIDaL RFID / NFC UID authentication server
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/sirfidal_server.py
+ExecStart=/usr/local/bin/sirfidal_server.py -s
 Restart=always
 RestartSec=1
 
