@@ -2416,7 +2416,8 @@ def main():
 		(active_clients[cpid].new_request or (active_uids_update and \
 		len(active_uids) != len(active_uids_prev))):
           active_clients[cpid].main_out_p.send((NBUIDS_UPDATE, \
-		(len(active_uids), len(active_uids) - len(active_uids_prev))))
+		(len(active_uids), (len(active_uids) - len(active_uids_prev)) \
+		if active_uids_update else 0)))
           active_clients[cpid].new_request = False
 
         # Request to watch the evolution of the list of active UIDs in
