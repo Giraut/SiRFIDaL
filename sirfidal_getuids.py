@@ -35,11 +35,6 @@ This program is a SiRFIDaL client. It requires the SiRFIDaL server to read the
 UIDs of RFID / NFC transponders.
 """
 
-### Parameters
-socket_path="/tmp/sirfidal_server.socket"
-
-
-
 ### Modules
 import re
 import sys

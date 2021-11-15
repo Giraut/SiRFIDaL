@@ -593,7 +593,7 @@ def hid_listener(main_in_q, listener_id, params):
   KEYUP     = 0
   KEYDOWN   = 1
 
-  scancodes_us_kbd={
+  scancodes_us_kbd = {
       2: ["1", "!"],  3: ["2", "@"],  4: ["3", "#"],  5: ["4", "$"],
       6: ["5", "%"],  7: ["6", "^"],  8: ["7", "&"],  9: ["8", "*"],
      10: ["9", "("], 11: ["0", ")"], 12: ["-", "_"], 13: ["=", "+"],
@@ -1611,7 +1611,7 @@ def tcp_listener(main_in_q, listener_id, params):
         continue
 
     # Read UIDs from the socket
-    rlines=[]
+    rlines = []
     b = ""
 
     try:
@@ -1956,7 +1956,7 @@ def is_remote_user(pid):
   But we keep it around as a last ditch effort to keep honest people honest, if
   the user has ignored the warning in the README.
   """
-  pprocess = psutil.Process(pid=pid)
+  pprocess = psutil.Process(pid = pid)
 
   while(pprocess and pprocess.name() not in remote_user_parent_process_names):
     pprocess = pprocess.parent()
@@ -2234,7 +2234,7 @@ def main():
   os.umask(0o077)
 
   # Start the server
-  Process(target = server, args=(main_in_q, sock,)).start()
+  Process(target = server, args = (main_in_q, sock,)).start()
 
   # Start the enabled listeners
   listener_uids_timeout = {}
@@ -2515,7 +2515,7 @@ def main():
 			active_clients[cpid].expires == None or crypt(
 			  new_active_uid,
 			  registered_uid_encr) == registered_uid_encr):
-              assoc_deleted=True
+              assoc_deleted = True
             else:
               new_encruids.append([registered_user, registered_uid_encr])
 

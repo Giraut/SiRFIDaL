@@ -162,8 +162,8 @@ def main():
 	"-u", "--unlockafter",
 	help = "Delay in sec before issuing unlock commands (-1 = disabled) "
 		"[default: {}]".format(default_unlock_timeout),
-	type=int,
-	default=default_unlock_timeout)
+	type = int,
+	default = default_unlock_timeout)
 
     argparser.add_argument(
 	"-v", "--verbose",

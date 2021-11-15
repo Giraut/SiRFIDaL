@@ -97,7 +97,7 @@ def load_defsfile():
 
   for entry in new_defsfile:
     if not (isinstance(entry, list) and \
-		len(entry)==4 and \
+		len(entry) == 4 and \
 		isinstance(entry[0], str) and \
 		isinstance(entry[1], str) and \
 		isinstance(entry[2], str) and \
@@ -453,7 +453,7 @@ def main():
 
               elif typer == "pynput":
                 try:
-                  kbd=Controller()
+                  kbd = Controller()
                   kbd.type(s)
                 except:
                   print("Error typing synthetic keyboard events using pynput")

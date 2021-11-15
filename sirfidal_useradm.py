@@ -30,7 +30,7 @@ def main():
   """
 
   # Get the current username
-  pw_name=pwd.getpwuid(os.getuid()).pw_name
+  pw_name = pwd.getpwuid(os.getuid()).pw_name
 
   # Read the command line arguments
   argparser = argparse.ArgumentParser()
@@ -58,7 +58,7 @@ def main():
 	const = pw_name,
 	help = "Remove all NFC / RFID UID association for a user")
 
-  args=argparser.parse_args()
+  args = argparser.parse_args()
 
   # Send the request to the server and get the reply back
   try:

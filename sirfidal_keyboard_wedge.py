@@ -214,7 +214,7 @@ def load_local_keymap():
   # Complete any holes left in the local keymap with definitions from the
   # default US keymap
   for d in set(ascii_to_ecodes_us) - set(ascii_to_ecodes):
-    ascii_to_ecodes[d]=ascii_to_ecodes_us[d]
+    ascii_to_ecodes[d] = ascii_to_ecodes_us[d]
 
   return(ascii_to_ecodes)
 
