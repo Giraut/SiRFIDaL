@@ -107,6 +107,9 @@ Server replies: NONE
                 OK
 		NOAUTH
 
+The server will reply to any other request it doesn't understand with:
+		UNKNOWN
+
 After a successful WAITAUTH request, if the requesting process owner is the
 the same as the user they request an authentication for (i.e. the user
 authenticates themselves), the server returns the authenticating UID in
@@ -1939,6 +1942,10 @@ def client_handler(pid, uid, gid, pw_name,
                   else:
                     csendbuf = "NOAUTH"
 
+                # Unknown or malformed request
+                else:
+                  csendbuf = "UNKNOWN"
+
 
 
 def is_remote_user(pid):
@@ -2406,10 +2413,11 @@ def main():
         # Request to watch the evolution of the number of active UIDs in
         # real-time: send an update if one is available
         if active_clients[cpid].request == WATCHNBUIDS_REQUEST and \
-		active_uids_update and \
-		len(active_uids) != len(active_uids_prev):
+		(active_clients[cpid].new_request or (active_uids_update and \
+		len(active_uids) != len(active_uids_prev))):
           active_clients[cpid].main_out_p.send((NBUIDS_UPDATE, \
 		(len(active_uids), len(active_uids) - len(active_uids_prev))))
+          active_clients[cpid].new_request = False
 
         # Request to watch the evolution of the list of active UIDs in
         # real-time: send an update if one is available
