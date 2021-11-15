@@ -1612,7 +1612,7 @@ def tcp_listener(main_in_q, listener_id, params):
 
     # Read UIDs from the socket
     rlines=[]
-    b=""
+    b = ""
 
     try:
 

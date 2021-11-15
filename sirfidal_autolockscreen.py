@@ -338,5 +338,5 @@ def main():
 
 
 # Jump to the main routine
-if __name__=="__main__":
+if __name__ == "__main__":
   sys.exit(main())

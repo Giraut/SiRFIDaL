@@ -17,9 +17,9 @@ if -u or -d is set to '-' or '', no sound is played.
 """
 
 ### Parameters
-default_up_sound_file ="sounds/up.wav"
-default_down_sound_file ="sounds/down.wav"
-socket_path ="/tmp/sirfidal_server.socket"
+default_up_sound_file = "sounds/up.wav"
+default_down_sound_file = "sounds/down.wav"
+socket_path = "/tmp/sirfidal_server.socket"
 
 # Comment this out to use pyaudio instead of an external player
 external_player_command = "/usr/bin/play {sndfile}"

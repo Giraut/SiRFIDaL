@@ -49,14 +49,14 @@ def main():
 	type = str,
         nargs = "?",
 	const = pw_name,
-	help="Disassociate a user from a NFC / RFID UID")
+	help = "Disassociate a user from a NFC / RFID UID")
 
   mutexargs.add_argument(
 	"-D", "--delalluser",
 	type = str,
         nargs = "?",
 	const = pw_name,
-	help="Remove all NFC / RFID UID association for a user")
+	help = "Remove all NFC / RFID UID association for a user")
 
   args=argparser.parse_args()
 
@@ -141,5 +141,5 @@ def main():
 
 
 ### Jump to the main routine
-if __name__=="__main__":
+if __name__ == "__main__":
   sys.exit(main())

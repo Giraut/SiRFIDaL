@@ -221,7 +221,7 @@ def main():
                   msg = "Error sending ENTER to display {} using xdo".format(
 				display)
 
-              elif typer=="pynput":
+              elif typer == "pynput":
                 try:
                   kbd = Controller()
                   kbd.type(s)
@@ -231,7 +231,7 @@ def main():
 				display)
 
               else:
-                msg="Error: no usable typer module. Install xdo or pynput"
+                msg = "Error: no usable typer module. Install xdo or pynput"
 
               # Restore or unset the previous DISPLAY and XAUTHORITY variables
               if display_prev:
