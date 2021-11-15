@@ -20,8 +20,7 @@ with authenticated RFID / NFC transponders.
 """
 
 # Parameters
-default_autotype_definitions_file="~/.sirfidal_autotype_definitions"
-socket_path="/tmp/sirfidal_server.socket"
+default_autotype_definitions_file = "~/.sirfidal_autotype_definitions"
 
 
 
@@ -35,31 +34,30 @@ import argparse
 import Xlib.display
 from time import sleep
 from psutil import Process
-from getpass import getuser
 from filelock import FileLock
 from base64 import b64encode, b64decode
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from socket import socket, timeout, AF_UNIX, SOCK_STREAM, SOL_SOCKET, \
-		SO_PASSCRED
+import sirfidal_client_class as scc
+
 try:
   from xdo import xdo
-  typer="xdo"
+  typer = "xdo"
 except:
   try:
     from pynput.keyboard import Controller
-    typer="pynput"
+    typer = "pynput"
   except:
-    typer=None
+    typer = None
   pass
 
 
 
 ### Global variables
-autotype_definitions_file=None
-defsfile_mtime=None
-defsfile=[]
-defsfile_lock=None
-defsfile_locked=False
+autotype_definitions_file = None
+defsfile_mtime = None
+defsfile = []
+defsfile_lock = None
+defsfile_locked = False
 
 
 
@@ -75,43 +73,41 @@ def load_defsfile():
 
   # Get the file's modification time
   try:
-    mt=os.stat(autotype_definitions_file).st_mtime
+    mt = os.stat(autotype_definitions_file).st_mtime
   except:
-    return(False)
+    return False
 
   # Check if the file needs reloading
   if not defsfile_mtime:
-    defsfile_mtime=mt
+    defsfile_mtime = mt
   else:
     if mt <= defsfile_mtime:
-      return(True)
+      return True
 
   # Re-read the file
   try:
     with open(autotype_definitions_file, "r") as f:
-      new_defsfile=json.load(f)
+      new_defsfile = json.load(f)
   except:
-    return(False)
+    return False
 
   # Validate the structure of the JSON format
   if not isinstance(new_defsfile, list):
-    return(False)
+    return False
 
   for entry in new_defsfile:
-    if not (
-	  isinstance(entry, list) and
-          len(entry)==4 and
-	  isinstance(entry[0], str) and
-	  isinstance(entry[1], str) and
-	  isinstance(entry[2], str) and
-	  isinstance(entry[3], str)
-	):
-      return(False)
+    if not (isinstance(entry, list) and \
+		len(entry)==4 and \
+		isinstance(entry[0], str) and \
+		isinstance(entry[1], str) and \
+		isinstance(entry[2], str) and \
+		isinstance(entry[3], str)):
+      return False
 
   # Update the definitions currently in memory
-  defsfile_mtime=mt
-  defsfile=new_defsfile
-  return(True)
+  defsfile_mtime = mt
+  defsfile = new_defsfile
+  return True
 
 
 
@@ -121,24 +117,24 @@ def write_defsfile(new_defsfile):
 
   try:
     with open(autotype_definitions_file, "w") as f:
-      json.dump(new_defsfile, f, indent=2)
+      json.dump(new_defsfile, f, indent = 2)
   except:
-    return(False)
+    return False
 
-  return(True)
+  return True
 
 # Encrypt a plaintext string into an encrypted base64 string
 def encrypt(pst, key):
 
   # Repeat the key to make it 32 bytes long (AES256 needs 32 bytes)
-  key=(key.encode("ascii") * 32)[:32]
+  key = (key.encode("ascii") * 32)[:32]
 
   # Encrypt the string
-  nonce=secrets.token_bytes(12)	# GCM mode needs 12 fresh bytes every time
-  es=nonce + AESGCM(key).encrypt(nonce, pst.encode("utf-8"), b"")
+  nonce = secrets.token_bytes(12)  # GCM mode needs 12 fresh bytes every time
+  es = nonce + AESGCM(key).encrypt(nonce, pst.encode("utf-8"), b"")
 
   # Return the encrypted text as a base64 string
-  return(b64encode(es).decode("ascii"))
+  return b64encode(es).decode("ascii")
 
 
 
@@ -146,235 +142,185 @@ def encrypt(pst, key):
 def decrypt(bes, key):
 
   # Repeat the key to make it 32 bytes long (AES256 needs 32 bytes)
-  key=(key.encode("ascii") * 32)[:32]
+  key = (key.encode("ascii") * 32)[:32]
 
   try:
-    es=b64decode(bes)
-    return(AESGCM(key).decrypt(es[:12], es[12:], b"").decode("utf-8"))
+    es = b64decode(bes)
+    return AESGCM(key).decrypt(es[:12], es[12:], b"").decode("utf-8")
   except:
-    return(None)
+    return None
 
 
 
 def main():
   """Main routine
   """
+
   global autotype_definitions_file
 
   # Get the PID of our parent process, to detect if it changes later on
-  ppid=Process().parent()
+  ppid = Process().parent()
 
   # Parse the command line arguments if we have parameters
-  argparser=argparse.ArgumentParser()
+  argparser = argparse.ArgumentParser()
 
   argparser.add_argument(
-	  "-d", "--defsfile",
-	  help="Autotype definitions file (default {})".format(
-		default_autotype_definitions_file),
-	  type=str,
-	  default=default_autotype_definitions_file
-	)
+	"-d", "--defsfile",
+	help = "Autotype definitions file (default {})"
+		.format(default_autotype_definitions_file),
+	type = str,
+	default = default_autotype_definitions_file)
 
-  mutexargs=argparser.add_mutually_exclusive_group()
+  mutexargs = argparser.add_mutually_exclusive_group()
 
   mutexargs.add_argument(
-	  "-s", "--showwininfo",
-	  help="Don't send any string, just show the current window's info" \
+	"-s", "--showwininfo",
+	help = "Don't send any string, just show the current window's info " \
 		"when authenticating",
-	  action="store_true",
-	)
+	action = "store_true")
+
   mutexargs.add_argument(
-	  "-w", "--writedefstring",
-	  help="Add or update a string in the definition file for the " \
-                "current window",
-	  type=str,
-	)
+	"-w", "--writedefstring",
+	help = "Add or update a string in the definition file for " \
+                "the current window",
+	type = str)
+
   mutexargs.add_argument(
-	  "-r", "--removedefstring",
-	  help="Remove string in the definition file for the current window",
-	  action="store_true",
-	)
+	"-r", "--removedefstring",
+	help = "Remove string in the definition file for the current window",
+	action = "store_true")
 
   argparser.add_argument(
-	  "-n", "--nocr",
-	  help="Don't add a carriage return at the end of the string",
-	  action="store_true",
-	)
+	"-n", "--nocr",
+	help = "Don't add a carriage return at the end of the string",
+	action = "store_true")
 
-  args=argparser.parse_args()
+  args = argparser.parse_args()
 
-  autotype_definitions_file=os.path.expanduser(args.defsfile) \
-				if args.defsfile \
-				else default_autotype_definitions_file
-  defsfile_lock=FileLock(autotype_definitions_file + ".lock")
-
-  # Get the user's name
-  user=getuser()
+  autotype_definitions_file = os.path.expanduser(args.defsfile) \
+				if args.defsfile else \
+				default_autotype_definitions_file
+  defsfile_lock = FileLock(autotype_definitions_file + ".lock")
 
   # If the definitions file doesn't exist, create it
   if not os.path.isfile(autotype_definitions_file) and not write_defsfile([]):
     print("Error creating the definitions file")
-    return(-1)
+    return -1
 
-  sock=None
-  defsfile_locked=False
-  do_release_defsfile_lock=False
-  do_return_status=None
+  defsfile_locked = False
 
-  auth_uids=set()
-  firstauth=True
+  uids_set = None
+
+  release_defsfile_lock = False
+  return_status = None
+
+  sc = None
 
   # Main loop
   while True:
 
-    # If the definitions file lock is locked, release it if we've been told to,
-    # if the socket is closed or if we're about to return
-    if (do_release_defsfile_lock or not sock or do_return_status!=None) \
-	and defsfile_locked:
-      defsfile_lock.release()
-      defsfile_locked=False
-      do_release_defsfile_lock=False
+    # Release the definition file lock if needed
+    if release_defsfile_lock:
+      if defsfile_locked:
+        defsfile_lock.release()
+        defsfile_locked = False
+      release_defsfile_lock = False
 
     # Do return if we've been told to
-    if do_return_status!=None:
-      return(do_return_status)
+    if return_status is not None:
+      return return_status
 
-    # If our parent process has changed, the session that initially started
-    # us up has probably terminated - in which case, we should terminate also
-    if Process().parent()!=ppid:
-      do_return_status=0
+    # If our parent process has changed, the session that initially
+    # started us has probably terminated, in which case so should we
+    if Process().parent() != ppid:
+      return_status = 0
       continue
 
-    if not sock:
-
-      # Open a socket to the auth server
+    # Connect to the server
+    if sc is None:
       try:
-        sock=socket(AF_UNIX, SOCK_STREAM)
-        sock.setsockopt(SOL_SOCKET, SO_PASSCRED, 1)
-        sock.connect(socket_path)
-        sock.settimeout(5)	# Don't get stuck on a closed socket
-      except:
-        if sock:
-          sock.close()
-        sock=None
-        sleep(1)
-        continue
+        sc = scc.sirfidal_client()
 
-      user_authenticated=False
-      crecvbuf=""
+      except KeyboardInterrupt:
+        return 0
+
+      except:
+        sleep(1)	# Wait a bit before reconnecting in case of error
+        sc = None
+        continue
 
       # If we're asked to manipulate the definition file, lock it before
       # the user authenticates, so another instance of the program can't
       # trigger an autotype with an old definition before we've had a
       # chance to change the file
-      if args.writedefstring!=None or args.removedefstring:
+      if args.writedefstring is not None or args.removedefstring:
+
         try:
-          defsfile_lock.acquire(timeout=1)
-          defsfile_locked=True
+          defsfile_lock.acquire(timeout = 1)
+          defsfile_locked = True
+
         except:
-          defsfile_locked=False
+          defsfile_locked = False
           print("Error securing exclusive access to the definitions file")
           print("Maybe delete {} if it's stale?".format(
-		autotype_definitions_file + ".lock"))
-          do_return_status=-1
+			autotype_definitions_file + ".lock"))
+          return_status = -1
           continue
 
-    # Send the request to the server
-    try:
-      sock.sendall("WAITAUTH {} {}\n".format(user, "0" if firstauth else "1").
-			encode("ascii"))
-    except:
-      sock.close()
-      sock=None
-      sleep(1)
-      continue
+      uids_set = None
 
     # Get the user's authentication status
-    got_waitauth_reply=False
+    try:
+      _, uids = sc.waitauth(wait = 0 if uids_set is None else 1)
 
-    while not got_waitauth_reply:
-
-      clines=[]
-
-      # Get data from the socket
-      try:
-        b=sock.recv(256).decode("ascii")
-      except KeyboardInterrupt:
-        sock.close()
-        sock=None
-        do_return_status=0
-        break
-      except:
-        sock.close()
-        sock=None
-        break
-
-      # If we got nothing, the server has closed its end of the socket.
-      if len(b)==0:
-        sock.close()
-        sock=None
-        break
-
-      # Read CR- or LF-terminated lines
-      for c in b:
-
-        if c=="\n" or c=="\r":
-          clines.append(crecvbuf)
-          crecvbuf=""
-
-        elif len(crecvbuf)<256 and c.isprintable():
-          crecvbuf+=c
-
-      # Process the lines
-      for l in clines:
-
-        # Retrieve the user's authentication status from the server's reply
-        if l[:6] == "AUTHOK":
-          got_waitauth_reply=True
-          last_auth_uids=auth_uids
-          auth_uids=set(l[6:].split())
-
-        elif l == "NOAUTH":
-          last_auth_uids=auth_uids
-          auth_uids=set()
-          got_waitauth_reply=True
-
-    if not sock:
-      if do_return_status==None:
-        sleep(1)
+    except KeyboardInterrupt:
+      release_defsfile_lock = True
+      return_status = 0
       continue
 
-    # The first authentication was just to get the current authentication status
-    # of the user the first time the program is run, in case they're already
-    # authenticated, and we should only consider a new additional UID for
-    # automatic typing
-    if firstauth:
-        print("Waiting for UID - CTRL-C to quit...")
-        last_auth_uids=auth_uids
-        firstauth=False
+    except:
+      try:
+        del(sc)
+      except:
+        pass
+      sc = None
+      release_defsfile_lock = True
+      sleep(1)	# Wait a bit before reconnecting in case of error
+      continue
 
-    # Do we have new UIDs (meaning either the user has authenticated for the
-    # first time, or has authenticated again with one or more another UIDs)?
-    if auth_uids > last_auth_uids:
+    # If we got the first set of UIDs, prompt the user and initialize
+    # the UIDs sets
+    if uids_set is None:
+      print("Waiting for UIDs - CTRL-C to quit...")
+      uids_set = set(uids)
 
-      # Get the first new authentication UID
-      auth_uid=list(auth_uids - last_auth_uids)[0]
+    uids_set_prev = uids_set
+    uids_set = set(uids)
+
+    # Do we have new UIDs - meaning either the user has authenticated for the
+    # first time, or has authenticated again with one or more new UID(s)?
+    new_uids = uids_set - uids_set_prev
+
+    if new_uids:
+
+      # Use the first of the new UIDs
+      auth_uid = sorted(new_uids)[0]
 
       # Get the active window
       try:
 
-        display=Xlib.display.Display()
+        display = Xlib.display.Display()
 
-        window=display.get_input_focus().focus
-        wmclass=window.get_wm_class()
-        wmname=window.get_wm_name()
+        window = display.get_input_focus().focus
+        wmclass = window.get_wm_class()
+        wmname = window.get_wm_name()
 
-        if wmname==None:
-          window=window.query_tree().parent
-          wmname=window.get_wm_name()
-          wmclass=window.get_wm_class()
+        if wmname == None:
+          window = window.query_tree().parent
+          wmname = window.get_wm_name()
+          wmclass = window.get_wm_class()
 
-        if wmname==None or wmclass==None or len(wmclass)<2:
+        if wmname == None or wmclass == None or len(wmclass) < 2:
           print("Error getting the window in focus")
           continue
 
@@ -390,75 +336,76 @@ def main():
         print("    class:       {}".format(wmclass[0]))
         print("    Title:       {}".format(wmname))
 
-        do_return_status=0
+        return_status = 0
         continue
 
       # Create an entry, replace an existing entry or delete any entries for
       # this window in the
       # definitions file
-      elif args.writedefstring!=None or args.removedefstring:
+      elif args.writedefstring is not None or args.removedefstring:
 
         # Load the existing definitions file if one exists
         if not load_defsfile():
           print("Error loading the definitions file")
-          do_return_status=-1
+          return_status = -1
           continue
 
         # Create the contents of the new definitions file
-        new_defsfile=[]
-        defsfile_modified=False
-        entry_appended=False
+        new_defsfile = []
+        defsfile_modified = False
+        entry_appended = False
 
         # New entry in plaintext
-        newstr=(args.writedefstring if args.writedefstring!=None else "") + \
-		("" if args.nocr else "\r")
+        newstr = (args.writedefstring if args.writedefstring is not None else \
+			"") + ("" if args.nocr else "\r")
 
         # New entry as an encrypted base64 string
-        newstr=encrypt(newstr, auth_uid)
+        newstr = encrypt(newstr, auth_uid)
 
         for d in defsfile:
 
           # Find a matching window in the definitions file
-          if d[0]==wmclass[1] and d[1]==wmclass[0] and d[2]==wmname:
+          if d[0] == wmclass[1] and d[1] == wmclass[0] and d[2] == wmname:
 
             # Decrypt the encrypted string associated with the window
-            s=decrypt(d[3], auth_uid)
+            s = decrypt(d[3], auth_uid)
 
             # If the decryption didn't succeed, try the next definition
-            if s==None:
+            if s is None:
               new_defsfile.append(d)
               continue
 
             if not defsfile_modified:
 
-              if args.writedefstring!=None:
+              if args.writedefstring is not None:
                 new_defsfile.append([wmclass[1], wmclass[0], wmname, newstr])
 
-              defsfile_modified=True
+              defsfile_modified = True
               print("{} existing entry for this window".format(
-			"Updated" if args.writedefstring!=None else "Removed"))
+			"Updated" if args.writedefstring is not None else \
+			"Removed"))
 
           else:
               new_defsfile.append(d)
 
         if not defsfile_modified:
 
-          if args.writedefstring!=None:
+          if args.writedefstring is not None:
 
             new_defsfile.append([wmclass[1], wmclass[0], wmname, newstr])
-            defsfile_modified=True
+            defsfile_modified = True
             print("Created entry for this window")
 
           else:
             print("No entry found for this window")
 
-        do_return_status=0
+        return_status = 0
 
         # Save the new definition file
         if defsfile_modified and not write_defsfile(new_defsfile):
 
           print("Error writing the definitions file")
-          do_return_status=-1
+          return_status = -1
 
         # Sleep a bit before releasing the lockfile and returning, to give
         # another process waiting on a successful authentication to autotype
@@ -474,10 +421,10 @@ def main():
         # Acquire the lock to the definitions file. If we can't, quietly pass
         # our turn
         try:
-          defsfile_lock.acquire(timeout=0)
-          defsfile_locked=True
+          defsfile_lock.acquire(timeout = 0)
+          defsfile_locked = True
         except:
-          defsfile_locked=False
+          defsfile_locked = False
           continue
 
         if not load_defsfile():
@@ -488,23 +435,23 @@ def main():
           # Find a matching window in the definitions file
           for d in defsfile:
 
-            if d[0]==wmclass[1] and d[1]==wmclass[0] and d[2]==wmname:
+            if d[0] == wmclass[1] and d[1] == wmclass[0] and d[2] == wmname:
 
               # Decrypt the encrypted string associated with the window
-              s=decrypt(d[3], auth_uid)
+              s = decrypt(d[3], auth_uid)
 
               # If the decryption didn't succeed, try the next definition
-              if s==None:
+              if s is None:
                 continue
 
               # "Type" the corresponding string
-              if typer=="xdo":
+              if typer == "xdo":
                 try:
                   xdo().enter_text_window(s)
                 except:
                   print("Error typing synthetic keyboard events using xdo")
 
-              elif typer=="pynput":
+              elif typer == "pynput":
                 try:
                   kbd=Controller()
                   kbd.type(s)
@@ -516,13 +463,13 @@ def main():
 
               break
 
-        do_release_defsfile_lock=True
+        release_defsfile_lock = True
 
-    # If the server has returned a successful authentication but the list of
+    # If the server has returned a successful authentication but the set of
     # active authenticated UIDs hasn't changed, sleep a bit so we don't run
     # a tight loop as long as the same UIDs are active
-    if auth_uids and auth_uids == last_auth_uids:
-      sleep(0.2)
+    if uids_set and uids_set == uids_set_prev:
+      sleep(.2)
 
 
 

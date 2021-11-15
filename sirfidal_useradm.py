@@ -11,8 +11,7 @@ is used.
 """
 
 ### Parameters
-uid_read_wait=5 #s
-socket_path="/tmp/sirfidal_server.socket"
+uid_read_wait = 5 #s
 
 
 
@@ -21,8 +20,7 @@ import os
 import sys
 import pwd
 import argparse
-from socket import socket, timeout, AF_UNIX, SOCK_STREAM, SOL_SOCKET, \
-		SO_PASSCRED
+import sirfidal_client_class as scc
 
 
 
@@ -35,157 +33,110 @@ def main():
   pw_name=pwd.getpwuid(os.getuid()).pw_name
 
   # Read the command line arguments
-  argparser=argparse.ArgumentParser()
-  mutexargs=argparser.add_mutually_exclusive_group(required=True)
+  argparser = argparse.ArgumentParser()
+
+  mutexargs = argparser.add_mutually_exclusive_group(required = True)
+
   mutexargs.add_argument(
-	  "-a", "--adduser",
-	  type=str,
-          nargs="?",
-          const=pw_name,
-	  help="Associate a user with a NFC / RFID UID"
-	)
+	"-a", "--adduser",
+	type = str,
+	nargs = "?",
+	const = pw_name,
+	help = "Associate a user with a NFC / RFID UID")
+
   mutexargs.add_argument(
-	  "-d", "--deluser",
-	  type=str,
-          nargs="?",
-          const=pw_name,
-	  help="Disassociate a user from a NFC / RFID UID"
-	)
+	"-d", "--deluser",
+	type = str,
+        nargs = "?",
+	const = pw_name,
+	help="Disassociate a user from a NFC / RFID UID")
+
   mutexargs.add_argument(
-	  "-D", "--delalluser",
-	  type=str,
-          nargs="?",
-          const=pw_name,
-	  help="Remove all NFC / RFID UID association for a user"
-	)
+	"-D", "--delalluser",
+	type = str,
+        nargs = "?",
+	const = pw_name,
+	help="Remove all NFC / RFID UID association for a user")
+
   args=argparser.parse_args()
 
-  # Open a socket to the auth server
+  # Send the request to the server and get the reply back
   try:
-    sock=socket(AF_UNIX, SOCK_STREAM)
-    sock.setsockopt(SOL_SOCKET, SO_PASSCRED, 1)
-    sock.connect(socket_path)
 
-    # Make sure we never get stuck on an idle server
-    sock.settimeout(uid_read_wait + 5)
-  except:
-    print("Error connecting to the server")
-    return(-1)
+    with scc.sirfidal_client() as sc:
 
-  # Send the request to the server
-  try:
-    sock.sendall("{cmd} {usr} {wait}\n".format(
-	  cmd="ADDUSER" if args.adduser else "DELUSER",
-	  usr=args.adduser if args.adduser else args.deluser if args.deluser \
-		else args.delalluser,
-	  wait="-1" if args.delalluser else uid_read_wait
-	).encode("ascii"))
-  except:
-    print("Error sending the request to the server")
-    return(-2)
+      if not args.adduser and not args.deluser and not args.delalluser:
+        print("Error: invalid username")
+        return -1
 
-  # If the action is interactive, tell the user we're waiting for a UID
-  if not args.delalluser:
-    print("Waiting for UID...")
-  
-  # Get the reply - one line only
-  server_reply=""
-  got_server_reply=False
+      if not args.delalluser:
+        print("Waiting for UID...")
 
-  while not got_server_reply:
+      if args.adduser:
+        reply = sc.adduser(args.adduser, wait = uid_read_wait)
 
-    # Get data from the socket
-    try:
-      b=sock.recv(256).decode("ascii")
-    except timeout:
-      print("Error: timeout waiting for the server's reply")
-      return(-3)
-    except:
-      print("Error waiting for a server's reply")
-      return(-4)
+      elif args.deluser:
+        reply = sc.deluser(args.deluser, wait = uid_read_wait)
 
-    # If we got nothing, the server has closed its end of the socket.
-    if len(b)==0:
+      elif args.delalluser:
+        reply = sc.delalluser(args.delalluser)
 
-      sock.close()
-      print("Error: connection to the server unexpectedly closed")
-      return(-5)
+  except Exception as e:
+    print("Error: {}".format(e))
+    return -1
 
-    # Read one CR- or LF-terminated line
-    for c in b:
-
-      if c=="\n" or c=="\r":
-        got_server_reply=True
-        break
-
-      elif len(server_reply)<256 and c.isprintable():
-        server_reply+=c
-
-  sock.close
-  
   # Report the result to the user
-  unknown_server_reply=True
+  if args.adduser is not None:
 
-  if args.adduser:
-
-    if server_reply=="OK":
-      unknown_server_reply=False
+    if reply == scc.OK:
       print("User {} successfully associated with this UID".format(
 		args.adduser))
-      return(0)
+      return 0
 
-    elif server_reply=="EXISTS":
-      unknown_server_reply=False
+    elif reply == scc.EXISTS:
       print("Error: user {} already associated with this UID".format(
 		args.adduser))
-      return(-6)
+      return -4
 
   elif args.deluser:
 
-    if server_reply=="OK":
-      unknown_server_reply=False
+    if reply == scc.OK:
       print("User {} successfully disassociated from this UID".format(
 		args.deluser))
-      return(0)
+      return 0
 
-    elif server_reply=="NONE":
-      unknown_server_reply=False
+    elif reply == scc.NONE:
       print("Error: user {} was not associated with this UID".format(
 		args.deluser))
-      return(-7)
+      return -5
 
   elif args.delalluser:
 
-    if server_reply=="OK":
-      unknown_server_reply=False
+    if reply == scc.OK:
       print("All UID associations successfully deleted for user {}".format(
 		args.delalluser))
-      return(0)
+      return 0
 
-    elif server_reply=="NONE":
-      unknown_server_reply=False
+    elif reply == scc.NONE:
       print("Error: user {} was not associated with any UID".format(
 		args.delalluser))
-      return(-8)
+      return -5
 
-  if server_reply=="NOAUTH":
-    unknown_server_reply=False
+  if reply == scc.NOAUTH:
     print("Error: you are not authorized to perform this operation")
-    return(-9)
+    return -1
 
-  elif server_reply=="WRITEERR":
-    unknown_server_reply=False
+  elif reply == scc.WRITEERR:
     print("Error: the server cannot write the encrypted UIDs file")
-    return(-10)
+    return -2
 
-  elif server_reply=="TIMEOUT":
-    unknown_server_reply=False
+  elif reply == scc.TIMEOUT:
     print("Error: timeout waiting for UID")
-    return(-11)
+    return -3
 
-  if unknown_server_reply:
-    print("Unknown server reply: {}".format(server_reply))
-    return(-12)
+  # We should never get here
+  print("Unknown server reply: {}".format(reply))
+  return -6
 
 
 

@@ -29,60 +29,53 @@ UIDs of RFID / NFC transponders.
 THIS SCRIPT MUST BE RUN AS ROOT!
 """
 
-### Parameters
-socket_path="/tmp/sirfidal_server.socket"
-
-
-
 ### Modules
 import re
 import sys
 import argparse
 from time import sleep
-from select import select
 from evdev import UInput, ecodes as e
 from subprocess import Popen, PIPE, DEVNULL
-from socket import socket, timeout, AF_UNIX, SOCK_STREAM, SOL_SOCKET, \
-		SO_PASSCRED
+import sirfidal_client_class as scc
 
 
 
 ### Defines
 # Key states
-KEY_UP=0
-KEY_DN=1
+KEY_UP = 0
+KEY_DN = 1
 
 # Shift modifiers masks
-LS=0x01000
-RS=0x02000
-S=LS
+LS = 0x01000
+RS = 0x02000
+S  = LS
 
 # Ctrl modifiers masks
-LC=0x04000
-RC=0x08000
-C=LC
+LC = 0x04000
+RC = 0x08000
+C  = LC
 
 # Alt modifier mask
-A=0x10000
+A = 0x10000
 
 # AltGr modifier mask
-AGR=0x20000
+AGR = 0x20000
 
 # Dead key mask
-DEADKEY=0x40000
+DEADKEY = 0x40000
 
 # Keycode field mask
-KC=0X00fff
+KC = 0X00fff
 
 # Special characters
-BS="\b"
-TAB="\t"
-CR="\r"
-ESC="\x1b"
-DEL="\x7f"
+BS  = "\b"
+TAB = "\t"
+CR  = "\r"
+ESC = "\x1b"
+DEL = "\x7f"
 
 # Default ASCII to event codes table for the US keyboard layout
-ascii_to_ecodes_us={
+ascii_to_ecodes_us = {
   BS  : e.KEY_BACKSPACE,    TAB : e.KEY_TAB,          CR  : e.KEY_ENTER,
   ESC : e.KEY_ESC,          " " : e.KEY_SPACE,        "!" : S|e.KEY_1,
   '"' : S|e.KEY_APOSTROPHE, "#" : S|e.KEY_3,          "$" : S|e.KEY_4,
@@ -120,13 +113,13 @@ ascii_to_ecodes_us={
 }
 
 # Modifiers to event codes
-modifiers_to_ecodes={
-  LS:  e.KEY_LEFTSHIFT,  RS:  e.KEY_RIGHTSHIFT, LC:  e.KEY_LEFTCTRL,   
+modifiers_to_ecodes = {
+  LS:  e.KEY_LEFTSHIFT,  RS:  e.KEY_RIGHTSHIFT, LC:  e.KEY_LEFTCTRL,
   RC:  e.KEY_RIGHTCTRL,  A:   e.KEY_LEFTALT,    AGR: e.KEY_RIGHTALT
 }
 
 # Dumpkeys names to ASCII
-dumpkeys_to_ascii={
+dumpkeys_to_ascii = {
   "Delete"      : BS,       "Tab"         : TAB,      "Return"      : CR,
   "Escape"      : ESC,      "space"       : " ",      "exclam"      : "!",
   "quotedbl"    : '"',      "numbersign"  : "#",      "dollar"      : "$",
@@ -168,7 +161,7 @@ dumpkeys_to_ascii={
 }
 
 # Dumpkeys names to modifiers masks
-dumpkeys_modifiers_to_masks={
+dumpkeys_modifiers_to_masks = {
   "plain"  : 0,  "shift"  : S,  "shiftl" : LS, "shiftr" : RS, "control": C,
   "ctrll"  : LC, "ctrlr"  : LC, "alt"    : A,   "altgr" : AGR
 }
@@ -178,17 +171,17 @@ dumpkeys_modifiers_to_masks={
 ### Routines
 def load_local_keymap():
 
-  ascii_to_ecodes={}
+  ascii_to_ecodes = {}
 
   # Run dumpkeys, capture its output (simpler and more portable than doing it
   # ourselves)
-  dkout=Popen(["dumpkeys", "-1"], stdout=PIPE, stderr=DEVNULL). \
-	communicate()[0].decode("utf-8").split("\n")
+  dkout = Popen(["dumpkeys", "-1"], stdout = PIPE, stderr = DEVNULL).\
+		communicate()[0].decode("utf-8").split("\n")
 
   # Process the lines from dumpkeys
   for l in dkout:
 
-    fields=l.split()
+    fields = l.split()
 
     # Modifiers / keycodes definition
     if len(fields) >= 5 and fields[-4] == "keycode" and \
@@ -196,25 +189,25 @@ def load_local_keymap():
 	fields[-1].lstrip("+") in dumpkeys_to_ascii.keys():
 
       # Get the dumpkeys name
-      dn=dumpkeys_to_ascii[fields[-1].lstrip("+")]
+      dn = dumpkeys_to_ascii[fields[-1].lstrip("+")]
 
       newdef = int(fields[-3])
 
-      if fields[-1][:5]=="dead_":
+      if fields[-1][:5] == "dead_":
         newdef |= DEADKEY
 
       # Compile the modifiers. Drop the new definitions if we find any modifier
       # we don't know about
       for m in fields[:-3]:
         if m not in dumpkeys_modifiers_to_masks:
-          newdefs=None
+          newdefs = None
           break
         else:
           newdef |= dumpkeys_modifiers_to_masks[m]
 
       # "Adopt" the new definition if it doesn't require more modifiers than
       # the previous one
-      if newdef!=None and (dn not in ascii_to_ecodes or \
+      if newdef is not None and (dn not in ascii_to_ecodes or \
 				ascii_to_ecodes[dn] > newdef):
         ascii_to_ecodes[dn] = newdef
 
@@ -233,179 +226,121 @@ def main():
   """
 
   # Read the command line arguments
-  argparser=argparse.ArgumentParser()
-  argparser.add_argument(
-	  "-p", "--prefix",
-	  type=str,
-	  help="UIDs output prefix to type (default: none)",
-	  default="",
-          required=False
-	)
-  argparser.add_argument(
-	  "-s", "--suffix",
-	  type=str,
-	  help="UIDs output suffix to type (default: carriage return)",
-	  default="\r",
-          required=False
-	)
-  argparser.add_argument(
-	  "-u", "--uskbd",
-	  action="store_true",
-	  help="Use the default US keyboard layout instead of the local layout",
-          required=False
-	)
-  args=argparser.parse_args()
+  argparser = argparse.ArgumentParser()
 
-  uids_list=[]
-  sock=None
+  argparser.add_argument(
+	"-p", "--prefix",
+	type = str,
+	help = "UIDs output prefix to type (default: none)",
+	default = "",
+	required = False)
+
+  argparser.add_argument(
+	"-s", "--suffix",
+	type = str,
+	help = "UIDs output suffix to type (default: carriage return)",
+	default = "\r",
+	required = False)
+
+  argparser.add_argument(
+	"-u", "--uskbd",
+	action = "store_true",
+	help = "Use the default US keyboard layout instead of the local layout",
+	required = False)
+
+  args = argparser.parse_args()
+
+  prefix = re.sub("\n", "\r", args.prefix)
+  suffix = re.sub("\n", "\r", args.suffix)
 
   # Load the current keymap
-  ascii_to_ecodes=ascii_to_ecodes_us
+  ascii_to_ecodes = ascii_to_ecodes_us
   if not args.uskbd:
     try:
-      ascii_to_ecodes=load_local_keymap()
+      ascii_to_ecodes = load_local_keymap()
     except:
-      print("Warning: cannot load the current keyboard layout: " \
+      print("Warning: cannot load the current keyboard layout: "
 		"defaulting to the US layout")
-  
+
   # Open uinput device
   try:
     ui = UInput()
   except:
     print("UInput open error: are you root?")
-    return(-2)
-        
+    return -1
+
+  uids_list = None
+
   while True:
 
-    if not sock:
-
-      # Open a socket to the auth server
-      try:
-        sock=socket(AF_UNIX, SOCK_STREAM)
-        sock.setsockopt(SOL_SOCKET, SO_PASSCRED, 1)
-        sock.connect(socket_path)
-      except:
-        if sock:
-          sock.close()
-        sock=None
-        sleep(.2)
-        continue
-
-      # Send the request to the server
-      try:
-        sock.sendall("WATCHUIDS\n".encode("ascii"))
-      except:
-        sock.close()
-        sock=None
-        sleep(.2)
-        continue
- 
-      crecvbuf=""
-
-    clines=[]
-
-    # Wait for data from the socket
     try:
-      if not select([sock], [], [], None)[0]:
-        sock.close()
-        sock=None
-        sleep(.2)
-        continue
-    except KeyboardInterrupt:
-      sock.close()
-      ui.close()
-      return(0)
-    except:
-      sock.close()
-      sock=None
-      sleep(.2)
-      continue
-  
-    # Get data from the socket
-    try:
-      b=sock.recv(256).decode("ascii")
-    except KeyboardInterrupt:
-      sock.close()
-      ui.close()
-      return(0)
-    except:
-      sock.close()
-      sock=None
-      sleep(.2)
-      continue
 
-    # If we got nothing, the server has closed its end of the socket.
-    if len(b)==0:
-      sock.close()
-      sock=None
-      sleep(.2)
-      continue
+      # Connect to the server
+      with scc.sirfidal_client() as sc:
 
-    # Read CR- or LF-terminated lines
-    for c in b:
+        # Watch UIDs
+        for r, uids in sc.watchuids():
 
-      if c=="\n" or c=="\r":
-        clines.append(crecvbuf)
-        crecvbuf=""
+          # The server informs us we're not authorized to watch UIDs
+          if r == scc.NOAUTH:
+            print("Not authorized! Are you root?")
+            ui.close()
+            return -1
 
-      elif len(crecvbuf)<256 and c.isprintable():
-        crecvbuf+=c
+          # If we got the initial UIDs update, initialize the UIDs lists
+          if uids_list is None:
+            uids_list = uids
 
-    # Process the lines
-    for l in clines:
+          uids_list_prev = uids_list
+          uids_list = uids
 
-      # Denied authorization
-      if l=="NOAUTH":
-        print("Not authorized! Are you root?")
-        sock.close()
-        ui.close()
-        return(-1)
+          # "Type out" the new UIDs
+          ui_write_err = False
 
-      # We have an update in the list of active UIDs
-      elif(re.match("^UIDS(\s[^\s]+)*$", l)):
+          for uid in set(uids_list) - set(uids_list_prev):
+            for c in prefix + uid + suffix:
 
-        last_uids_list=uids_list
-        uids_list=sorted(l.split()[1:])
+              ecode = ascii_to_ecodes.get(c, None)
 
-        # "Type out" the new UIDs
-        ui_write_err=False
-        for uid in set(uids_list) - set(last_uids_list):
+              # Compose the modifiers key-down / key-up sequences
+              modseq_keydn = []
+              modseq_keyup = []
+              for m in modifiers_to_ecodes:
+                if ecode & m:
+                  modseq_keydn += [[modifiers_to_ecodes[m], KEY_DN]]
+                  modseq_keyup = [[modifiers_to_ecodes[m], KEY_UP]] + \
+					modseq_keyup
 
-          for c in re.sub("\n", "\r", args.prefix) + uid + \
-		 re.sub("\n", "\r", args.suffix):
+              # Compose the key's key-down / key-up sequence
+              keyseq = [[ecode & KC, KEY_DN]]
+              keyseq += [[ecode & KC, KEY_UP]]
+              if ecode & DEADKEY:
+                keyseq += [[e.KEY_SPACE, KEY_DN]]
+                keyseq += [[e.KEY_SPACE & KC, KEY_UP]]
 
-            ecode=ascii_to_ecodes.get(c, None)
+              # "Type" the complete sequence
+              try:
 
-            # Compose the modifiers key-down / key-up sequences
-            modseq_keydn=[]
-            modseq_keyup=[]
-            for m in modifiers_to_ecodes:
-              if ecode & m:
-                modseq_keydn += [[modifiers_to_ecodes[m], KEY_DN]]
-                modseq_keyup = [[modifiers_to_ecodes[m], KEY_UP]] + modseq_keyup
+                for key, state in modseq_keydn + keyseq + modseq_keyup:
+                  ui.write(e.EV_KEY, key, state)
 
-            # Compose the key's key-down / key-up sequence
-            keyseq=[[ecode & KC, KEY_DN]]
-            keyseq += [[ecode & KC, KEY_UP]]
-            if ecode & DEADKEY:
-              keyseq += [[e.KEY_SPACE, KEY_DN]]
-              keyseq += [[e.KEY_SPACE & KC, KEY_UP]]
+                ui.syn()
 
-            # "Type" the complete sequence
-            try:
+              except Exception as exc:
+                print("UInput write error: {}".format(exc))
+                ui_write_err = True
+                break
 
-              for key, state in modseq_keydn + keyseq + modseq_keyup:
-                ui.write(e.EV_KEY, key, state)
-
-              ui.syn()
-
-            except:
-              ui_write_err=True
+            if ui_write_err:
               break
 
-          if ui_write_err:
-            print("UInput write error")
-            break
+    except KeyboardInterrupt:
+      ui.close()
+      return 0
+
+    except:
+      uids_list = None
+      sleep(1)	# Wait a bit before reconnecting in case of error or timeout
 
 
 

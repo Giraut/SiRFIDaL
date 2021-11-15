@@ -17,29 +17,28 @@ if -u or -d is set to '-' or '', no sound is played.
 """
 
 ### Parameters
-default_up_sound_file="sounds/up.wav"
-default_down_sound_file="sounds/down.wav"
-socket_path="/tmp/sirfidal_server.socket"
+default_up_sound_file ="sounds/up.wav"
+default_down_sound_file ="sounds/down.wav"
+socket_path ="/tmp/sirfidal_server.socket"
 
 # Comment this out to use pyaudio instead of an external player
-external_player_command="/usr/bin/play {sndfile}"
+external_player_command = "/usr/bin/play {sndfile}"
 
 
 
 ### Modules
-import re
 import os
 import sys
 import argparse
 from time import sleep
-from socket import socket, AF_UNIX, SOCK_STREAM, SOL_SOCKET, SO_PASSCRED
+import sirfidal_client_class as scc
 
 if "external_player_command" in globals() and external_player_command:
   from subprocess import Popen, DEVNULL
 else:
   import wave
   from pyaudio import PyAudio
-  external_player_command=None
+  external_player_command = None
 
 
 
@@ -48,24 +47,28 @@ def play_wav_file(fpath):
 
   # Use an external player
   if external_player_command:
-    Popen(external_player_command.format(sndfile=fpath).split(),
-				stdin=DEVNULL, stdout=DEVNULL, stderr=DEVNULL)
+    retcode = Popen(external_player_command.format(sndfile = fpath).split(),
+		stdin = DEVNULL, stdout = DEVNULL, stderr = DEVNULL).wait()
+    if retcode != 0:
+      raise RuntimeError("{} returned {}".format(
+			external_player_command.format(sndfile = fpath),
+			retcode))
 
   # Use pyaudio
   else:
 
     # Open the WAV file
-    f=wave.open(fpath, "rb")
+    f = wave.open(fpath, "rb")
 
     # Redirect stderr to /dev/null to hide useless PortAudio messages
-    devnull=os.open(os.devnull, os.O_WRONLY)
-    old_stderr=os.dup(2)
+    devnull = os.open(os.devnull, os.O_WRONLY)
+    old_stderr = os.dup(2)
     sys.stderr.flush()
     os.dup2(devnull, 2)
     os.close(devnull)
 
     try:
-      p=PyAudio()
+      p = PyAudio()
     except:
       # Restore stderr
       os.dup2(old_stderr, 2)
@@ -77,18 +80,15 @@ def play_wav_file(fpath):
     os.close(old_stderr)
 
     # Open the stream
-    stream=p.open(
-  	  format=p.get_format_from_width(f.getsampwidth()),
-  	  channels=f.getnchannels(),
-  	  rate=f.getframerate(),
-  	  output=True
-  	)
+    stream = p.open(format = p.get_format_from_width(f.getsampwidth()),
+			channels = f.getnchannels(), rate = f.getframerate(),
+			output = True)
 
     # Send the WAV file to the stream in chunks
-    data=f.readframes(1024)
+    data = f.readframes(1024)
     while data:
       stream.write(data)
-      data=f.readframes(1024)
+      data = f.readframes(1024)
 
     stream.stop_stream()
     stream.close()
@@ -103,113 +103,63 @@ def main():
   """
 
   # Read the command line arguments
-  argparser=argparse.ArgumentParser()
-  argparser.add_argument(
-	  "-u", "--upsoundfile",
-	  type=str,
-	  help="WAV sound file to play when a new UID comes up (- to disable)",
-          required=False
-	)
-  argparser.add_argument(
-	  "-d", "--downsoundfile",
-	  type=str,
-	  help="WAV sound file to play when a UID goes away (- to disable)",
-          required=False
-	)
-  args=argparser.parse_args()
+  argparser = argparse.ArgumentParser()
 
-  upsndfile=args.upsoundfile if args.upsoundfile!=None \
-		else default_up_sound_file
-  downsndfile=args.downsoundfile if args.downsoundfile!=None \
-		else default_down_sound_file
+  argparser.add_argument(
+	"-u", "--upsoundfile",
+	type = str,
+	help = "WAV sound file to play when a new UID comes up (- to disable)",
+	required = False)
 
-  sock=None
+  argparser.add_argument(
+	"-d", "--downsoundfile",
+	type = str,
+	help = "WAV sound file to play when a UID goes away (- to disable)",
+	required = False)
+
+  args = argparser.parse_args()
+
+  upsndfile = args.upsoundfile if args.upsoundfile else \
+				default_up_sound_file
+  downsndfile = args.downsoundfile if args.downsoundfile else \
+				default_down_sound_file
 
   while True:
 
-    if not sock:
-
-      # Open a socket to the auth server
-      try:
-        sock=socket(AF_UNIX, SOCK_STREAM)
-        sock.setsockopt(SOL_SOCKET, SO_PASSCRED, 1)
-        sock.connect(socket_path)
-      except:
-        if sock:
-          sock.close()
-        sock=None
-        sleep(1)
-        continue
-
-      # Send the request to the server
-      try:
-        sock.sendall("WATCHNBUIDS\n".encode("ascii"))
-      except:
-        sock.close()
-        sock=None
-        sleep(1)
-        continue
- 
-      crecvbuf=""
-
-    clines=[]
-
-    # Get data from the socket
     try:
-      b=sock.recv(256).decode("ascii")
+
+      # Connect to the server
+      with scc.sirfidal_client() as sc:
+
+        # Watch the number of active UIDs
+        for _, chg in sc.watchnbuids():
+
+          # Play the "up" sound file if the number of active UIDs has
+          # increased
+          if chg > 0 and upsndfile and upsndfile != "-":
+            try:
+              play_wav_file(upsndfile)
+            except Exception as e:
+              print("Error: cannot play {} sound file: {}"
+			.format(upsndfile, e))
+
+          # Play the "down" sound file if the number of active UIDs has
+          # decreased
+          elif chg < 0 and downsndfile and downsndfile != "-":
+            try:
+              play_wav_file(downsndfile)
+            except Exception as e:
+              print("Error: cannot play {} sound file: {}"
+			.format(downsndfile, e))
+
     except KeyboardInterrupt:
-      sock.close()
-      return(0)
+      return 0
+
     except:
-      sock.close()
-      sock=None
-      sleep(1)
-      continue
-
-    # If we got nothing, the server has closed its end of the socket.
-    if len(b)==0:
-      sock.close()
-      sock=None
-      sleep(1)
-      continue
-
-    # Read CR- or LF-terminated lines
-    for c in b:
-
-      if c=="\n" or c=="\r":
-        clines.append(crecvbuf)
-        crecvbuf=""
-
-      elif len(crecvbuf)<256 and c.isprintable():
-        crecvbuf+=c
-
-    # Process the lines
-    for l in clines:
-
-      # Only care about active UIDs status updates
-      m=re.findall("^NBUIDS\s([0-9]+)\s([-+]?[0-9]+)$", l)
-      if m:
-
-        # Play the "up" sound file if the number of active UIDs has
-        # increased
-        chg=float(m[0][1])
-
-        if chg > 0 and upsndfile and upsndfile!="-":
-          try:
-            play_wav_file(upsndfile)
-          except:
-            print("Error: cannot play {} sound file".format(upsndfile))
-
-        # Play the "down" sound file if the number of active UIDs has
-        # decreased
-        elif chg < 0 and downsndfile and downsndfile!="-":
-          try:
-            play_wav_file(downsndfile)
-          except:
-            print("Error: cannot play {} sound file".format(downsndfile))
+      sleep(1)	# Wait a bit before reconnecting in case of error
 
 
 
 ### Jump to the main routine
-if __name__=="__main__":
+if __name__ == "__main__":
   sys.exit(main())

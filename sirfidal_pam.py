@@ -68,8 +68,7 @@ See README.example_PAM_scenarios for more PAM configuration options.
 """
 
 ### Parameters
-default_auth_wait=2 #s
-socket_path="/tmp/sirfidal_server.socket"
+default_auth_wait = 2 #s
 
 
 
@@ -77,10 +76,8 @@ socket_path="/tmp/sirfidal_server.socket"
 import os
 import sys
 import argparse
-from time import sleep
-from datetime import datetime
-from socket import socket, timeout, AF_UNIX, SOCK_STREAM, SOL_SOCKET, \
-		SO_PASSCRED
+from time import time, sleep
+import sirfidal_client_class as scc
 
 
 
@@ -91,7 +88,7 @@ class ArgumentParser(argparse.ArgumentParser):
   pam_exec.so
   """
 
-  def error(self, status=0, message=None):
+  def error(self, status = 0, message = None):
     super(ArgumentParser, self).print_help()
     self.exit(-1)
 
@@ -109,119 +106,61 @@ def main():
   # Get the PAM_USER environment variable. If we don't have it, we're
   # not being called by pam_exec.so, so get the USER environment variable
   # instead
-  pam_user=os.environ["PAM_USER"] if "PAM_USER" in os.environ else \
+  pam_user = os.environ["PAM_USER"] if "PAM_USER" in os.environ else \
 		os.environ["USER"] if "USER" in os.environ else None
 
   # Read the command line arguments
-  argparser=ArgumentParser()
-  argparser.add_argument(
-	  "-w", "--wait",
-	  type=float,
-	  help="Delay (s) to wait for a UID that authenticates the user " \
-		"(default {})".format(default_auth_wait),
-          required=False
-	)
-  argparser.add_argument(
-	  "-u", "--user",
-	  type=str,
-	  help="Username to override the PAM_USER environment variable",
-          required=False
-	)
-  args=argparser.parse_args()
+  argparser = ArgumentParser()
 
-  wait_secs=args.wait if args.wait!=None else default_auth_wait
-  wait_secs=wait_secs if wait_secs >= 0 else 0
-  pam_user=args.user if args.user else pam_user
+  argparser.add_argument(
+	"-w", "--wait",
+	type = float,
+	help = "Delay (s) to wait for a UID that authenticates the user " \
+		"(default {})".format(default_auth_wait),
+	required = False)
+
+  argparser.add_argument(
+	"-u", "--user",
+	type = str,
+	help = "Username to override the PAM_USER environment variable",
+	required = False)
+
+  args = argparser.parse_args()
+
+  wait_secs = max(0, args.wait if args.wait is not None else default_auth_wait)
+  pam_user = args.user if args.user else pam_user
 
   # Fail if we don't have a user to authenticate
   if not pam_user:
     print("Error: no username to authenticate")
-    return(-1)
-  
-  # Open a socket to the auth server
+    return -1
+
+  # Authenticate the user. Wait the number of seconds regardless in case of
+  # error or failed authentication
+  endwait = time() + wait_secs
+
   try:
-    sock=socket(AF_UNIX, SOCK_STREAM)
-  except:
-    sleep(wait_secs)
-    print("Error: socket timeout")
-    return(-2)
-  try:
-    sock.setsockopt(SOL_SOCKET, SO_PASSCRED, 1)
-  except:
-    sleep(wait_secs)
-    print("Error: socket setup")
-    return(-3)
-  try:
-    sock.connect(socket_path)
-  except:
-    sleep(wait_secs)
-    print("Error: socket connect")
-    return(-4)
 
-  # Make sure we never get stuck on an idle server
-  sock.settimeout(wait_secs + 5)
+    with scc.sirfidal_client() as sc:
 
-  endwait=datetime.now().timestamp() + wait_secs
+      if sc.waitauth(user = pam_user, wait = wait_secs)[0]:
+        print("AUTHOK")
+        return 0
 
-  # Send the authentication request to the server
-  try:
-    sock.sendall("WAITAUTH {} {}\n".format(pam_user, wait_secs).encode("ascii"))
-  except:
-    left_to_wait=endwait-datetime.now().timestamp()
-    sleep(left_to_wait if left_to_wait > 0 else 0)
-    print("Error: socket send")
-    return(-5)
+      else:
+        print("NOAUTH")
+        sleep(max(0, endwait - time()))
+        retcode = 1
 
-  # Get the reply - one line only
-  server_reply=""
-  got_server_reply=False
+  except Exception as e:
+    print("Error: {}".format(e))
+    retcode = -1
 
-  while not got_server_reply:
-
-    # Get data from the socket
-    try:
-      b=sock.recv(256).decode("ascii")
-    except timeout:
-      print("Error: socket receive timeout")
-      return(-6)
-    except:
-      left_to_wait=endwait-datetime.now().timestamp()
-      sleep(left_to_wait if left_to_wait > 0 else 0)
-      print("Error: socket receive")
-      return(-7)
-
-    # If we got nothing, the server has closed its end of the socket.
-    if len(b)==0:
-
-      sock.close()
-      left_to_wait=endwait-datetime.now().timestamp()
-      sleep(left_to_wait if left_to_wait > 0 else 0)
-      print("Error: socket unexpectedly closed")
-      return(-8)
-
-    # Read one CR- or LF-terminated line
-    for c in b:
-
-      if c=="\n" or c=="\r":
-        got_server_reply=True
-        break
-
-      elif len(server_reply)<256 and c.isprintable():
-        server_reply+=c
-
-  sock.close
-
-  # Print the server's reply (without UID if it was sent by the server) and
-  # return the authentication status
-  if server_reply[:6]=="AUTHOK":
-    print(server_reply[:6])
-    return(0)
-  else:
-    print(server_reply)
-    return(1)
+  sleep(max(0, endwait - time()))
+  return retcode
 
 
 
 ### Jump to the main routine
-if __name__=="__main__":
+if __name__ == "__main__":
   sys.exit(main())
