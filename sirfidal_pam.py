@@ -149,7 +149,6 @@ def main():
 
       else:
         print("NOAUTH")
-        sleep(max(0, endwait - time()))
         retcode = 1
 
   except Exception as e:
