@@ -1956,6 +1956,7 @@ def is_remote_user(pid):
   But we keep it around as a last ditch effort to keep honest people honest, if
   the user has ignored the warning in the README.
   """
+
   pprocess = psutil.Process(pid = pid)
 
   while(pprocess and pprocess.name() not in remote_user_parent_process_names):
