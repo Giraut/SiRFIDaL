@@ -16,9 +16,6 @@ Example: if the first authentication is pam_unix and the second authentication
          with sirfidal_pam getting the UID immediately afterward.
 
 THIS SCRIPT MUST BE RUN AS ROOT!
-
-For X logins, the script uses the wmctrl utility to determine if an X session
-is already running. You can set the paths to wmctrl in the parameters below.
 """
 
 ### Modules
