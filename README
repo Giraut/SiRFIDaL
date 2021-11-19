@@ -135,11 +135,12 @@ Installation:
 
       apt-get install python3-cryptography
       apt-get install python3-xdo
+          -or-
+      python3 -m pip install pynput
 
     * Additional to use sirfidal_auto_send_enter_at_login.py:
 
-      apt-get install wmctrl
-      apt-get install python3-xdo
+      apt-get install python3-xlib
 
     * Additional to use sirfical_beep.py:
 

@@ -21,29 +21,22 @@ For X logins, the script uses the wmctrl utility to determine if an X session
 is already running. You can set the paths to wmctrl in the parameters below.
 """
 
-### Parameters
-wmctrl = "/usr/bin/wmctrl"
-
-
-
 ### Modules
 import re
 import os
 import psutil
+from time import sleep
 from evdev import UInput, ecodes
-from subprocess import Popen, DEVNULL, PIPE
 import sirfidal_client_class as scc
 
 try:
-  from xdo import xdo
-  typer = "xdo"
+  import Xlib.XK
+  from Xlib import X
+  from Xlib.protocol import event
+  from Xlib.display import Display
+  do_x = True
 except:
-  try:
-    from pynput.keyboard import Controller
-    typer = "pynput"
-  except:
-    typer = None
-  pass
+  do_x = False
 
 
 
@@ -127,30 +120,41 @@ def xorg_attached_to_vc(vc):
 
 
 
-def is_wm_running(display, xauthfile):
-  """ Returns True if a window manager is running on an X display, False if
-  no windows manager is found (indicating that no session is open, only the
-  display manager is running and presumably waiting for a login) or None in
-  case of error.
+def open_x_display(display, xauthfile):
+  """Open a connection to an X display. Return the Display object or None in
+  case of failure
   """
 
-  if not display or not xauthfile:
-   return None
+  xauth_orig = os.environ.get("XAUTHORITY")
+  os.environ["XAUTHORITY"] = xauthfile
 
   try:
-    wmctrl_output = b"\n".join(Popen([wmctrl, "-m"],
-		env = {"DISPLAY": display, "XAUTHORITY": xauthfile},
-		stdout = PIPE, stderr = PIPE).communicate()).decode("utf-8")
+    d = Display(display)
+  except:
+    d = None
+
+  if xauth_orig:
+    os.environ["XAUTHORITY"] = xauth_orig
+  else:
+    del(os.environ["XAUTHORITY"])
+
+  return d
+
+
+
+def is_wm_running(d, r):
+  """ Returns True if an ICCM or EWMH window manager is running as the root
+  window of an X display, False if no windows manager is found and None in case
+  of error.
+  """
+
+  try:
+    return r.get_full_property(d.intern_atom("_NET_SUPPORTING_WM_CHECK"),
+				d.intern_atom("CARDINAL")) is not None or \
+		r.get_full_property(d.intern_atom("_WIN_SUPPORTING_WM_CHECK"),
+				d.intern_atom("CARDINAL")) is not None
   except:
     return None
-
-  if re.search("Cannot get window manager info", wmctrl_output, re.I):
-    return False
-
-  if re.search("PID", wmctrl_output, re.I):
-    return True
-
-  return None
 
 
 
@@ -192,60 +196,60 @@ def main():
               print("Error determining the active virtual console")
               continue
 
-            # Is an X server attached to the virtual console?
-            display, xauthfile = xorg_attached_to_vc(vc)
-            if display and xauthfile:
+            # If we do X: is an X server attached to the virtual console?
+            if do_x:
+              display, xauthfile = xorg_attached_to_vc(vc)
 
-              # If a window manager is running on the X server, a session is
-              # already open, so give up. Also give up if checking the display
-              # manager results in an error
-              if is_wm_running(display, xauthfile) != False:
-                continue
+            if do_x and display is not None and xauthfile is not None:
 
-              # Point DISPLAY and XAUTHORITY to the X server
-              display_prev = os.environ.get("DISPLAY")
-              xauthority_prev = os.environ.get("XAUTHORITY")
+                # Open the X display
+                d = open_x_display(display, xauthfile)
+                if d is not None:
 
-              os.environ["DISPLAY"] = display
-              os.environ["XAUTHORITY"] = xauthfile
+                  # Get the root window
+                  try:
+                    r = d.screen().root
+                  except:
+                    r = None
 
-              # Send ENTER to the display manager
-              s = "\r"
-              msg = None
+                  # Check whether a ICCM or EWMH window manager is running on
+                  # the X server - in which case we can be reasonably sure a
+                  # session is already open. If the check succeeds and no
+                  # window manager is present, send a Return key event. Abstain
+                  # in case of error, or if a window manager is running
+                  if r is not None and is_wm_running(d, r) == False:
 
-              if typer == "xdo":
-                try:
-                  xdo().enter_text_window(s)
-                  msg = "ENTER sent to display {}".format(display)
-                except:
-                  msg = "Error sending ENTER to display {} using xdo".format(
-				display)
+                    # Send Return to the X window currently in focus - i.e. the
+                    # display manager, since nothing else should be displayed
+                    try:
+                      enter_keysym = Xlib.XK.string_to_keysym("Return")
+                      enter_keycode = d.keysym_to_keycode(enter_keysym)
+                      f = d.get_input_focus().focus
+                      f.send_event(event.KeyPress(detail = enter_keycode,
+						time = 0,
+						root = r, window = f,
+                                                same_screen = 0,
+						child = X.NONE,
+						root_x = 0, root_y = 0,
+						event_x = 0, event_y = 0,
+						state = 0))
+                      f.send_event(event.KeyRelease(detail = enter_keycode,
+						time = 0,
+						root = r, window = f,
+                                                same_screen = 0,
+						child = X.NONE,
+						root_x = 0, root_y = 0,
+						event_x = 0, event_y = 0,
+						state = 0))
+                      print("Return sent to the X window")
+                    except:
+                      print("Error sending Return keysym to the X window")
 
-              elif typer == "pynput":
-                try:
-                  kbd = Controller()
-                  kbd.type(s)
-                  msg = "ENTER sent to display {}".format(display)
-                except:
-                  msg = "Error sending ENTER to display {} using pynput".format(
-				display)
-
-              else:
-                msg = "Error: no usable typer module. Install xdo or pynput"
-
-              # Restore or unset the previous DISPLAY and XAUTHORITY variables
-              if display_prev:
-                os.environ["DISPLAY"] = display_prev
-              else:
-                os.environ.pop("DISPLAY")
-              if xauthority_prev:
-                os.environ["XAUTHORITY"] = xauthority_prev
-              else:
-                os.environ.pop("XAUTHORITY")
-
-              # Print any error message
-              if msg:
-                print(msg)
+                  # Close the X display
+                  try:
+                    d.close()
+                  except:
+                    pass
 
             # Is getty and/or login attached to the virtual console and no
             # session open?
@@ -272,9 +276,9 @@ def main():
     except KeyboardInterrupt:
       return 0
 
-    except:
-      uids_list = None
-      sleep(2)	# Wait a bit before reconnecting
+#    except:
+#      uids_list = None
+#      sleep(2)	# Wait a bit before reconnecting
 
 
 
