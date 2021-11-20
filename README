@@ -106,7 +106,8 @@ Installation:
       - Configure PC/SC for your readers. If pcsc_scan works, SiRFIDaL will
         work also. See https://pcsclite.apdu.fr/
 
-    * Additional to use serial readers, Halo Scanners or Chameleon devices:
+    * Additional to use serial readers, Halo Scanners, Proxmark3, Chameleon or
+      uFR devices in serial mode:
 
       apt-get install python3-serial
 
