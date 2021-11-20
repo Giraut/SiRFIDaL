@@ -222,6 +222,12 @@ Server configuration:
                         "S" for space
       - stopbits:       1, 1.5 or 2
 
+    * Configuration options for Halo Scanners:
+
+      - device:         Serial device file
+      - new_firmware:	Set to True for use with Halo Scanners with firmware
+                        version 7.0 or above
+
     * Configuration options for HID readers - aka keyboard wedges:
 
       - device:         HID input device file

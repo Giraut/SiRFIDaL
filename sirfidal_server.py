@@ -159,6 +159,15 @@ readers = {
     "stopbits":		1
   },
 
+  # Halo scanner
+  "halo_scanner_#1":	{
+    "enabled":		False,
+    "type":		"halo",
+    "uids_timeout":	1, #s
+    "device":		"/dev/ttyACM0",
+    "new_firmware":	True
+  },
+
   # HID reader
   "keyboard_wedge_#1":	{
     "enabled":		False,
@@ -566,6 +575,119 @@ def serial_listener(main_in_q, listener_id, params):
 
     elif c in hexdigits and len(uid) < 256:
       uid += c.upper()
+
+
+
+def halo_listener(main_in_q, listener_id, params):
+  """Read UIDs from a Halo Scanner connected to USB and send the list of active
+  UIDs to the main process
+  """
+
+  # Modules
+  import serial
+
+  setproctitle("sirfidal_listener_{}".format(listener_id))
+  log(VERBOSITY_NORMAL, listener_id, "Started")
+
+  # Parameters
+  device = params["device"]
+  new_firmware = params["new_firmware"]
+
+  serdev = None
+
+  close_device = False
+
+  while True:
+
+    # Close the serial device if needed
+    if close_device:
+      try:
+        serdev.close()
+      except:
+        pass
+      serdev = None
+      sleep(2)	# Wait a bit to reopen the device
+
+      close_device = False
+
+    # Open the serial device
+    if serdev is None:
+      try:
+        serdev = serial.Serial(port = device,
+				baudrate = 115200,
+				bytesize = serial.EIGHTBITS,
+				parity = serial.PARITY_NONE,
+				stopbits = serial.STOPBITS_ONE,
+				timeout = None)
+
+      except KeyboardInterrupt:
+        return -1
+
+      except Exception as e:
+        log(VERBOSITY_DEBUG, listener_id, e)
+        serdev = None
+
+      scanner_state = 0
+
+    if serdev is None:
+      sleep(2)	# Wait a bit to reopen the device
+      continue
+
+    # Send the connection request to the scanner
+    if scanner_state == 0:
+      sleep(.5)
+      serdev.write(b"PA\r")
+      scanner_state = 1
+
+    # Read data from the reader
+    try:
+      c = serdev.read(1).decode("ascii")
+
+    except KeyboardInterrupt:
+      return -1
+
+    except Exception as e:
+      log(VERBOSITY_DEBUG, listener_id, e)
+      close_device = True
+      continue
+
+    if not c:
+      log(VERBOSITY_DEBUG, listener_id, "Error reading from {}".format(device))
+      close_device = True
+      continue
+
+    # Receive the connection acknowledgment
+    if 1 <= scanner_state <=5:
+      if c == "Halo\x00"[scanner_state - 1]:
+        scanner_state += 1
+      else:
+        scanner_state = 0
+
+    # Send the command to put the serial output on
+    if scanner_state == 6:
+      sleep(.5)
+      serdev.write(b"RO1\r" if new_firmware else b"RO\x01\r")
+      scanner_state = 7
+
+    # Receive the serial output on aknowledgement
+    elif scanner_state == 7:
+      if c == "Z":
+        scanner_state = 8
+        uid = ""
+      elif c == "?":
+        scanner_state = 6
+      else:
+        scanner_state = 0
+
+    # Receive UIDs
+    elif scanner_state == 8:
+      if c == "\r":
+        if uid:
+          main_in_q.put((LISTENER_UIDS_UPDATE, (listener_id, (uid,))))
+          uid = ""
+
+      elif c in hexdigits and len(uid) < 256:
+        uid += c.upper()
 
 
 
@@ -1956,7 +2078,6 @@ def is_remote_user(pid):
   But we keep it around as a last ditch effort to keep honest people honest, if
   the user has ignored the warning in the README.
   """
-
   pprocess = psutil.Process(pid = pid)
 
   while(pprocess and pprocess.name() not in remote_user_parent_process_names):
@@ -2082,6 +2203,12 @@ def main():
       "bytesize":	((int,), lambda v: v in (7, 8)),
       "parity":		((str,), lambda v: v in ("N", "E", "O", "M", "S")),
       "stopbits":	((int, float), lambda v: v in (1, 1.5, 2))
+    },
+
+    # Halo scanner
+    "halo":	{
+      "device":		((str,), lambda v: v != ""),
+      "new_firmware":	((bool,), None)
     },
 
     # HID reader
