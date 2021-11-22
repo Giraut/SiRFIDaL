@@ -90,8 +90,9 @@ Installation:
     * Common:
 
       apt-get install python3
-      apt-get install python3-filelock
       apt-get install python3-psutil
+      apt-get install python3-filelock
+      apt-get install python3-setproctitle
 
       cp *.py /usr/local/bin
       cp *.service /lib/systemd/system
