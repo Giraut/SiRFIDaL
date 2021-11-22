@@ -191,7 +191,7 @@ readers = {
     "enabled":		False,
     "type":		"proxmark3",
     "uids_timeout":	None, # as the PM3 reader is polled
-    "device":		"/dev/ttyACM0",
+    "device":		"/dev/ttyACM0",	# None if pm3 script is used as client
     "client":		"/usr/local/bin/proxmark3",
     "client_workdir":	"/tmp",
     "client_timeout":	2, #s
@@ -273,15 +273,6 @@ remote_user_parent_process_names = ("sshd", "telnetd")
 
 
 
-# Try to read the alternative configuration file. Any variables redefined in
-# this file will override the parameters above
-try:
-  exec(open(config_file).read())
-except:
-  pass
-
-
-
 ### Modules
 import os
 import re
@@ -304,6 +295,17 @@ from subprocess import Popen, DEVNULL, PIPE
 from multiprocessing import Process, Queue, Pipe
 from socket import socket, timeout, AF_UNIX, SOCK_STREAM, SOL_SOCKET, \
 			SO_REUSEADDR, SO_PEERCRED
+
+
+
+# Try to read the alternative configuration file. Any variables redefined in
+# this file will override the parameters above
+if os.path.exists(config_file):
+  try:
+    exec(open(config_file).read())
+  except Exception as e:
+    print("Error reading {}: {}".format(config_file, e))
+    sys.exit(1)
 
 
 
@@ -821,6 +823,7 @@ def android_listener(main_in_q, listener_id, params):
   # SIGCHLD handler to reap defunct adb processes
   def adb_listener_sigchld_handler(sig, fname):
     log(VERBOSITY_DEBUG, listener_id, "ADB client died")
+    sleep(.5)	# Give the client's outputs a chance to flush before reaping
     os.wait()
 
   signal(SIGCHLD, adb_listener_sigchld_handler)
@@ -869,7 +872,7 @@ def android_listener(main_in_q, listener_id, params):
       try:
         proc[0] = Popen([client, "shell", adb_shell_command],
 				bufsize = 0, stdin = DEVNULL,
-				stdout = PIPE, stderr = DEVNULL)
+				stdout = PIPE, stderr = PIPE)
 
       except KeyboardInterrupt:
         return -1
@@ -882,12 +885,82 @@ def android_listener(main_in_q, listener_id, params):
       sleep(2)	# Wait a bit before trying to respawn a new adb client
       continue
 
-    # Get logcat lines from adb
+    # Read lines from the ADB client's stdout or stderr
     rlines = []
     b = ""
 
     try:
-      b = proc[0].stdout.read(256).decode("ascii")
+      fds = select([proc[0].stdout, proc[0].stderr], [], [], None)[0]
+
+      if fds:
+
+        # Read the client's stdout
+        if proc[0].stdout in fds:
+          try:
+            b = proc[0].stdout.read(256).decode("ascii")
+
+          except KeyboardInterrupt:
+            return -1
+
+          except Exception as e:
+            log(VERBOSITY_DEBUG, listener_id, e)
+            kill_client = True
+            continue
+
+          if not b:
+            log(VERBOSITY_DEBUG, listener_id,
+				"Error reading ADB client's stdout")
+            kill_client = True
+            continue
+
+          # Split the data into lines and log them
+          for c in b:
+
+            if c in "\r\n":
+              log(VERBOSITY_DEBUG, listener_id, "[client stdout] {}"
+						.format(recvbuf))
+              rlines.append(recvbuf)
+              recvbuf = ""
+
+            elif c.isprintable() and len(recvbuf) < 256:
+              recvbuf += c
+
+        # Read the client's stderr, for debugging purposes
+        elif proc[0].stderr in fds:
+          try:
+            b = proc[0].stderr.read(256).decode("ascii")
+
+          except KeyboardInterrupt:
+            return -1
+
+          except Exception as e:
+            log(VERBOSITY_DEBUG, listener_id, e)
+            kill_client = True
+            continue
+
+          if not b:
+            log(VERBOSITY_DEBUG, listener_id,
+				"Error reading ADB client's stderr")
+            kill_client = True
+            continue
+
+          # Split the data into lines and log them
+          for c in b:
+
+            if c in "\r\n":
+              log(VERBOSITY_DEBUG, listener_id, "[client stderr] {}"
+						.format(recvbuf))
+              recvbuf = ""
+
+            elif  c.isprintable() and len(recvbuf) < 256:
+              recvbuf += c
+
+      # Error waiting for data from stdout or stderr
+      else:
+        log(VERBOSITY_DEBUG, listener_id, "Error waiting for data from ADB "
+						"client's stdout or stderr")
+        kill_client = True
+        continue
 
     except KeyboardInterrupt:
       return -1
@@ -896,21 +969,6 @@ def android_listener(main_in_q, listener_id, params):
       log(VERBOSITY_DEBUG, listener_id, e)
       kill_client = True
       continue
-
-    if not b:
-      log(VERBOSITY_DEBUG, listener_id, "Error reading ADB client's stdout")
-      kill_client = True
-      continue
-
-    # Split the data into lines
-    for c in b:
-
-      if c in "\r\n":
-        rlines.append(recvbuf)
-        recvbuf = ""
-
-      elif c.isprintable() and len(recvbuf)<256:
-        recvbuf += c
 
     # Process the lines from logcat
     for l in rlines:
@@ -960,6 +1018,7 @@ def proxmark3_listener(main_in_q, listener_id, params):
   # SIGCHLD handler to reap defunct proxmark3 processes
   def proxmark3_listener_sigchld_handler(sig, fname):
     log(VERBOSITY_DEBUG, listener_id, "Proxmark3 client died")
+    sleep(.5)	# Give the client's outputs a chance to flush before reaping
     os.wait()
 
   signal(SIGCHLD, proxmark3_listener_sigchld_handler)
@@ -1058,8 +1117,9 @@ def proxmark3_listener(main_in_q, listener_id, params):
         os.chdir(client_workdir)
 
         # Try to spawn a Proxmark3 client
-        proc[0] = Popen([client, device], bufsize = 0, env = {},
-			stdin = pty_slave, stdout = PIPE, stderr = DEVNULL)
+        proc[0] = Popen([client, device] if device else [client],
+			bufsize = 0, env = {},
+			stdin = pty_slave, stdout = PIPE, stderr = PIPE)
         timeout_tstamp = time() + client_timeout
 
         # Start the command sequence at the beginning
@@ -1077,41 +1137,76 @@ def proxmark3_listener(main_in_q, listener_id, params):
       sleep(2)	# Wait a bit before trying to respawn a new client
       continue
 
-    # Read lines from the Proxmark3 client
+    # Read lines from the Proxmark3 client's stdout or stderr
     rlines = []
     b = ""
 
     try:
+      fds = select([proc[0].stdout, proc[0].stderr], [], [], client_timeout)[0]
 
-      if select([proc[0].stdout], [], [], client_timeout)[0]:
+      if fds:
 
-        try:
-          b = proc[0].stdout.read(256).decode("ascii")
+        # Read the client's stdout
+        if proc[0].stdout in fds:
+          try:
+            b = proc[0].stdout.read(256).decode("ascii")
 
-        except KeyboardInterrupt:
-          return -1
+          except KeyboardInterrupt:
+            return -1
 
-        except Exception as e:
-          log(VERBOSITY_DEBUG, listener_id, e)
-          kill_client = True
-          continue
+          except Exception as e:
+            log(VERBOSITY_DEBUG, listener_id, e)
+            kill_client = True
+            continue
 
-        if not b:
-          log(VERBOSITY_DEBUG, listener_id,
-			"Error reading Proxmark3 client's stdout")
-          kill_client = True
-          continue
+          if not b:
+            log(VERBOSITY_DEBUG, listener_id,
+				"Error reading Proxmark3 client's stdout")
+            kill_client = True
+            continue
 
-        # Split the data into lines. If we get a prompt that doesn't end with
-        # a CR or LF, make it into a line also
-        for c in b:
+          # Split the data into lines. If we get a prompt that doesn't end with
+          # a CR or LF, make it into a line also. Log the lines
+          for c in b:
 
-          if c in "\r\n" or prompts_regex.match(recvbuf):
-            rlines.append(recvbuf)
-            recvbuf = ""
+            if c in "\r\n" or prompts_regex.match(recvbuf):
+              log(VERBOSITY_DEBUG, listener_id, "[client stdout] {}"
+						.format(recvbuf))
+              rlines.append(recvbuf)
+              recvbuf = ""
 
-          elif  c.isprintable() and len(recvbuf) < 256:
-            recvbuf += c
+            elif c.isprintable() and len(recvbuf) < 256:
+              recvbuf += c
+
+        # Read the client's stderr, for debugging purposes
+        elif proc[0].stderr in fds:
+          try:
+            b = proc[0].stderr.read(256).decode("ascii")
+
+          except KeyboardInterrupt:
+            return -1
+
+          except Exception as e:
+            log(VERBOSITY_DEBUG, listener_id, e)
+            kill_client = True
+            continue
+
+          if not b:
+            log(VERBOSITY_DEBUG, listener_id,
+				"Error reading Proxmark3 client's stderr")
+            kill_client = True
+            continue
+
+          # Split the data into lines and log them
+          for c in b:
+
+            if c in "\r\n":
+              log(VERBOSITY_DEBUG, listener_id, "[client stderr] {}"
+						.format(recvbuf))
+              recvbuf = ""
+
+            elif  c.isprintable() and len(recvbuf) < 256:
+              recvbuf += c
 
       # Timeout: the Proxmark3 client is unresponsive
       else:
@@ -2224,7 +2319,7 @@ def main():
 
     # Proxmark3
     "proxmark3":	{
-      "device":		((str,), lambda v: v != ""),
+      "device":		((type(None), str), lambda v: v is None or v != ""),
       "client":		((str,), lambda v: v != ""),
       "client_workdir":	((str,), lambda v: v != ""),
       "client_timeout":	((int, float), lambda v: v > 0),
