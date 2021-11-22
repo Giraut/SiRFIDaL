@@ -301,6 +301,11 @@ from socket import socket, timeout, AF_UNIX, SOCK_STREAM, SOL_SOCKET, \
 # Try to read the alternative configuration file. Any variables redefined in
 # this file will override the parameters above
 if os.path.exists(config_file):
+  if "anti_circular_import" in globals():
+    print("Error: circular import. Only copy the configuration parameters in {}"
+		.format(config_file))
+    sys.exit(-1)
+  anti_circular_import = True
   try:
     exec(open(config_file).read())
   except Exception as e:
