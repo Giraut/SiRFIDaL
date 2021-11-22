@@ -14,15 +14,25 @@ The sound files to be played may be specified with the -u and -d arguments, or
 encoded permanently in the parameters below.
 
 if -u or -d is set to '-' or '', no sound is played.
+
+Note: if you run this script in a Pulseaudio environment and it seems to work
+      fine when running in a console but not when running as a systemd service,
+      try setting force_restart_pulseaudio to True below
 """
 
 ### Parameters
 default_up_sound_file = "sounds/up.wav"
 default_down_sound_file = "sounds/down.wav"
-socket_path = "/tmp/sirfidal_server.socket"
+use_external_player = True	# Set this to use an external player instead of
+				# the pyaudio module to play WAV files
+force_restart_pulseaudio = False	# Enable this to (re)start a Pulseaudio
+					# daemon before playing a WAV file
 
-# Comment this out to use pyaudio instead of an external player
+# Full path to the external player if use_external_player is set
 external_player_command = "/usr/bin/play {sndfile}"
+
+# Full path to the pulseaudio executable if force_restart_pulseaudio is set
+pulseaudio_command = "/usr/bin/pulseaudio"
 
 
 
@@ -33,20 +43,32 @@ import argparse
 from time import sleep
 import sirfidal_client_class as scc
 
-if "external_player_command" in globals() and external_player_command:
+if use_external_player or force_restart_pulseaudio:
   from subprocess import Popen, DEVNULL
-else:
+if not use_external_player:
   import wave
   from pyaudio import PyAudio
-  external_player_command = None
 
 
 
 ### Subroutines
 def play_wav_file(fpath):
+  """Play a WAV file, either directly using the pyaudio module or using an
+  external utility. If required, start a Pulseaudio daemon before playing the
+  WAV file: if the Pulseaudio daemon isn't already running, this will start it,
+  which is useful if the script isn't run as the currently logged in user. If
+  the Pulseaudio daemon is already running, ignore the resulting error message
+  and play the WAV file anyway.
+  """
+
+  # If required, unconditionally respawn a Pulseaudio daemon before playing
+  # the WAV file
+  if force_restart_pulseaudio:
+    Popen([pulseaudio_command, "-D"], stdin = DEVNULL, stdout = DEVNULL,
+					stderr = DEVNULL).wait()
 
   # Use an external player
-  if external_player_command:
+  if use_external_player:
     retcode = Popen(external_player_command.format(sndfile = fpath).split(),
 		stdin = DEVNULL, stdout = DEVNULL, stderr = DEVNULL).wait()
     if retcode != 0:
@@ -89,6 +111,10 @@ def play_wav_file(fpath):
     while data:
       stream.write(data)
       data = f.readframes(1024)
+
+    # Wait a bit to make sure the playback is really over before closing
+    # the stream
+    sleep(.2)
 
     stream.stop_stream()
     stream.close()
