@@ -273,9 +273,9 @@ def main():
     except KeyboardInterrupt:
       return 0
 
-#    except:
-#      uids_list = None
-#      sleep(2)	# Wait a bit before reconnecting
+    except:
+      uids_list = None
+      sleep(2)	# Wait a bit before reconnecting
 
 
 
