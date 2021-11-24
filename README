@@ -94,9 +94,26 @@ Installation:
       apt-get install python3-filelock
       apt-get install python3-setproctitle
 
-      cp *.py /usr/local/bin
-      cp *.service /lib/systemd/system
+      cp sirfidal_server.py /usr/local/bin
+
+      cp sirfidal_client_class.py /usr/local/bin
+
+      cp sirfidal_autolockscreen.py /usr/local/bin
+      cp sirfidal_auto_send_enter_at_login.py /usr/local/bin
+      cp sirfidal_autotype.py /usr/local/bin
+      cp sirfidal_beep.py /usr/local/bin
+      cp sirfidal_getuids.py /usr/local/bin
+      cp sirfidal_keyboard_wedge.py /usr/local/bin
+      cp sirfidal_pam.py /usr/local/bin
+      cp sirfidal_useradm.py /usr/local/bin
+
+      cp sirfidal_server_parameters.py /etc
+      cp sirfidal_clients_parameters.py /etc
+
       cp sirfidal_pam.config /usr/share/pam-configs
+
+      cp *.service /lib/systemd/system
+
       mkdir -p /usr/local/share/sounds/sirfidal
       cp sounds/* /usr/local/share/sounds/sirfidal
 
@@ -154,9 +171,8 @@ Server configuration:
 
   As root:
 
-    All the configuration options are located inside the sirfidal_server.py
-    file itself. However, you can override any of the settings with settings
-    similarly declared in a separate /etc/sirfical_server_parameters.py.
+    All the SiRFIDaL server configuration options are located in the
+    /etc/sirfical_server_parameters.py file:
 
     * Readers declararion:
 
@@ -326,7 +342,10 @@ Optional systemd services:
 
   As root:
 
-    * Enabling and starting the SiRFIDaL beep service:
+    * Configuring, enabling and starting the SiRFIDaL beep service:
+
+      - Change the system-wide configuration settings related to sirfidal_beep
+        in /etc/sirfidal_clients_parameters.py if needed
 
       systemctl enable sirfidal_beep
       systemctl start sirfidal_beep
@@ -336,7 +355,7 @@ Optional systemd services:
       systemctl enable sirfidal_keyboard_wedge
       systemctl start sirfidal_keyboard_wedge
 
-    * Enabling and starting the SiRFIDaL *auto send ENTER at login" service:
+    * Enabling and starting the SiRFIDaL "auto send ENTER at login" service:
 
       systemctl enable sirfidal_auto_send_enter_at_login
       systemctl start sirfidal_auto_send_enter_at_login
@@ -363,12 +382,39 @@ PAM configuration:
 
 
 
+Association / disassociating UIDS and usernames:
+
+  A user is only authenticated if at least one active UID is associated with
+  their username. Therefore, one or more UIDs must first be enrolled for a
+  particular user.
+
+  Use the sirfidal_useradm utility to associate a UID with a user (-a),
+  disassociate a UID from a user (-d) or remove all UID <-> user associations
+  (-D).
+
+  As root:
+
+    sirfidal_useradm.py -a username
+    sirfidal_useradm.py -d username
+    sirfidal_useradm.py -D username
+
+  As user (only disassociations allowed):
+
+    sirfidal_useradm.py -d
+    sirfidal_useradm.py -D
+
+
+
 Optional user utilities configuration:
 
   As user:
 
     * Running the automatic screensaver locker / unlocker:
 
+      - Change the system-wide configuration settings related to
+        sirfidal_autolockscreen in /etc/sirfidal_clients_parameters.py if
+        needed. Alternatively, you may partly or fully override them with
+        user-specific settings in ~/.sirfidal_clients_parameters.py
       - In Preferences > Startup Applications, click on + > Custom command
       - Enter the name "RFID NFC lock unlock screen" (or whatever you want)
       - Enter the command "/usr/local/bin/sirfidal_autolockscreen.py"
@@ -377,6 +423,10 @@ Optional user utilities configuration:
 
     * Running the autotyper:
 
+      - Change the system-wide configuration settings related to
+        sirfidal_autotype in /etc/sirfidal_clients_parameters.py if
+        needed. Alternatively, you may partly or fully override them with
+        user-specific settings in ~/.sirfidal_clients_parameters.py
       - In Preferences > Startup Applications, click on + > Custom command
       - Enter the name "RFID NFC autotype" (or whatever you want)
       - Enter the command "/usr/local/bin/sirfidal_autotype.py"

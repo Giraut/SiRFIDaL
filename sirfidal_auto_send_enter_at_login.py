@@ -37,7 +37,7 @@ except:
 
 
 
-### Subroutines
+### Routines
 def active_vc():
   """Return the name of the current virtual console or None in case of error.
   (Linux-specific)

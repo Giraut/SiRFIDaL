@@ -20,22 +20,6 @@ Note: if you run this script in a Pulseaudio environment and it seems to work
       try setting force_restart_pulseaudio to True below
 """
 
-### Parameters
-default_up_sound_file = "sounds/up.wav"
-default_down_sound_file = "sounds/down.wav"
-use_external_player = True	# Set this to use an external player instead of
-				# the pyaudio module to play WAV files
-force_restart_pulseaudio = False	# Enable this to (re)start a Pulseaudio
-					# daemon before playing a WAV file
-
-# Full path to the external player if use_external_player is set
-external_player_command = "/usr/bin/play {sndfile}"
-
-# Full path to the pulseaudio executable if force_restart_pulseaudio is set
-pulseaudio_command = "/usr/bin/pulseaudio"
-
-
-
 ### Modules
 import os
 import sys
@@ -43,15 +27,23 @@ import argparse
 from time import sleep
 import sirfidal_client_class as scc
 
-if use_external_player or force_restart_pulseaudio:
+
+
+### Parameters
+scc.load_parameters("sirfidal_beep")
+
+
+
+### Extra modules
+if scc.use_external_player or scc.force_restart_pulseaudio:
   from subprocess import Popen, DEVNULL
-if not use_external_player:
+if not scc.use_external_player:
   import wave
   from pyaudio import PyAudio
 
 
 
-### Subroutines
+### Routines
 def play_wav_file(fpath):
   """Play a WAV file, either directly using the pyaudio module or using an
   external utility. If required, start a Pulseaudio daemon before playing the
@@ -63,17 +55,17 @@ def play_wav_file(fpath):
 
   # If required, unconditionally respawn a Pulseaudio daemon before playing
   # the WAV file
-  if force_restart_pulseaudio:
-    Popen([pulseaudio_command, "-D"], stdin = DEVNULL, stdout = DEVNULL,
+  if scc.force_restart_pulseaudio:
+    Popen([scc.pulseaudio_command, "-D"], stdin = DEVNULL, stdout = DEVNULL,
 					stderr = DEVNULL).wait()
 
   # Use an external player
-  if use_external_player:
-    retcode = Popen(external_player_command.format(sndfile = fpath).split(),
+  if scc.use_external_player:
+    retcode = Popen(scc.external_player_command.format(sndfile = fpath).split(),
 		stdin = DEVNULL, stdout = DEVNULL, stderr = DEVNULL).wait()
     if retcode != 0:
       raise RuntimeError("{} returned {}".format(
-			external_player_command.format(sndfile = fpath),
+			scc.external_player_command.format(sndfile = fpath),
 			retcode))
 
   # Use pyaudio
@@ -146,9 +138,9 @@ def main():
   args = argparser.parse_args()
 
   upsndfile = args.upsoundfile if args.upsoundfile else \
-				default_up_sound_file
+				scc.default_up_sound_file
   downsndfile = args.downsoundfile if args.downsoundfile else \
-				default_down_sound_file
+				scc.default_down_sound_file
 
   while True:
 

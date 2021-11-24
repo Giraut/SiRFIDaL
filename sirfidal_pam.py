@@ -67,11 +67,6 @@ with a password *AND* RFID), replace "success=end" with "success=ok" in
 See README.example_PAM_scenarios for more PAM configuration options.
 """
 
-### Parameters
-default_auth_wait = 2 #s
-
-
-
 ### Modules
 import os
 import sys
@@ -116,7 +111,8 @@ def main():
 	"-w", "--wait",
 	type = float,
 	help = "Delay (s) to wait for a UID that authenticates the user " \
-		"(default {})".format(default_auth_wait),
+		"(default {})".format(scc._sirfidal_default_auth_wait),
+        default = scc._sirfidal_default_auth_wait,
 	required = False)
 
   argparser.add_argument(
@@ -127,7 +123,7 @@ def main():
 
   args = argparser.parse_args()
 
-  wait_secs = max(0, args.wait if args.wait is not None else default_auth_wait)
+  wait_secs = max(0, args.wait)
   pam_user = args.user if args.user else pam_user
 
   # Fail if we don't have a user to authenticate

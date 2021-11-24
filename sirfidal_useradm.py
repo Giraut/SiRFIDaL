@@ -5,15 +5,10 @@ This script is a SiRFIDaL client. It forwards requests to associate a user with
 a UID and add it to the authorized users, remove a user <-> UID association, or
 remove all associations for a user to the SiRFIDaL server.
 
-Only root may assocate / disassociate a user and a UID, or a non-root user for
-themselves. If no username is supplied after -a, -d or -D, the current username
-is used.
+Only root may assocate / disassociate a user and a UID, and a non-root user may
+only disassociate one or all UIDs associated with their own username.
+If no username is supplied after -d or -D, the current username is used.
 """
-
-### Parameters
-uid_read_wait = 5 #s
-
-
 
 ### Modules
 import os
@@ -29,8 +24,9 @@ def main():
   """Main routine
   """
 
-  # Get the current username
-  pw_name = pwd.getpwuid(os.getuid()).pw_name
+  # Get the current userid and username
+  userid = os.getuid()
+  pw_name = pwd.getpwuid(userid).pw_name
 
   # Read the command line arguments
   argparser = argparse.ArgumentParser()
@@ -40,8 +36,6 @@ def main():
   mutexargs.add_argument(
 	"-a", "--adduser",
 	type = str,
-	nargs = "?",
-	const = pw_name,
 	help = "Associate a user with a NFC / RFID UID")
 
   mutexargs.add_argument(
@@ -58,7 +52,22 @@ def main():
 	const = pw_name,
 	help = "Remove all NFC / RFID UID association for a user")
 
+  argparser.add_argument(
+	"-w", "--wait",
+	type = float,
+	help = "Delay (s) to wait for a UID (default {})"
+		.format(scc._sirfidal_default_useradm_uid_read_wait),
+        default = scc._sirfidal_default_useradm_uid_read_wait,
+	required = False)
+
   args = argparser.parse_args()
+
+  uid_read_wait = max(0, args.wait)
+
+  # Only root is allowed to asscociate a UID and a username
+  if args.adduser and userid != 0:
+    print("Error: you are not authorized to perform this operation")
+    return -1
 
   # Send the request to the server and get the reply back
   try:

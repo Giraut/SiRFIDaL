@@ -19,12 +19,7 @@ This program is a SiRFIDaL client. It requires the SiRFIDaL server to interact
 with authenticated RFID / NFC transponders.
 """
 
-# Parameters
-default_autotype_definitions_file = "~/.sirfidal_autotype_definitions"
-
-
-
-# Modules
+### Modules
 import re
 import os
 import sys
@@ -52,8 +47,13 @@ except:
 
 
 
+### Parameters
+scc.load_parameters("sirfidal_autotype")
+
+
+
 ### Global variables
-autotype_definitions_file = None
+definitions_file = None
 defsfile_mtime = None
 defsfile = []
 defsfile_lock = None
@@ -61,7 +61,7 @@ defsfile_locked = False
 
 
 
-# Functions
+### Routines
 def load_defsfile():
   """Read and verify the content of the definitions file, if it has been
   modified. Return True if the file didn't need reloading and there was
@@ -73,7 +73,7 @@ def load_defsfile():
 
   # Get the file's modification time
   try:
-    mt = os.stat(autotype_definitions_file).st_mtime
+    mt = os.stat(definitions_file).st_mtime
   except:
     return False
 
@@ -86,7 +86,7 @@ def load_defsfile():
 
   # Re-read the file
   try:
-    with open(autotype_definitions_file, "r") as f:
+    with open(definitions_file, "r") as f:
       new_defsfile = json.load(f)
   except:
     return False
@@ -116,7 +116,7 @@ def write_defsfile(new_defsfile):
   """
 
   try:
-    with open(autotype_definitions_file, "w") as f:
+    with open(definitions_file, "w") as f:
       json.dump(new_defsfile, f, indent = 2)
   except:
     return False
@@ -152,11 +152,12 @@ def decrypt(bes, key):
 
 
 
+### Main routine
 def main():
   """Main routine
   """
 
-  global autotype_definitions_file
+  global definitions_file
 
   # Get the PID of our parent process, to detect if it changes later on
   ppid = Process().parent()
@@ -167,9 +168,9 @@ def main():
   argparser.add_argument(
 	"-d", "--defsfile",
 	help = "Autotype definitions file (default {})"
-		.format(default_autotype_definitions_file),
+		.format(scc.default_definitions_file),
 	type = str,
-	default = default_autotype_definitions_file)
+	default = scc.default_definitions_file)
 
   mutexargs = argparser.add_mutually_exclusive_group()
 
@@ -197,13 +198,12 @@ def main():
 
   args = argparser.parse_args()
 
-  autotype_definitions_file = os.path.expanduser(args.defsfile) \
-				if args.defsfile else \
-				default_autotype_definitions_file
-  defsfile_lock = FileLock(autotype_definitions_file + ".lock")
+  definitions_file = os.path.expanduser(args.defsfile) if args.defsfile else \
+			scc.default_definitions_file
+  defsfile_lock = FileLock(definitions_file + ".lock")
 
   # If the definitions file doesn't exist, create it
-  if not os.path.isfile(autotype_definitions_file) and not write_defsfile([]):
+  if not os.path.isfile(definitions_file) and not write_defsfile([]):
     print("Error creating the definitions file")
     return -1
 
@@ -263,7 +263,7 @@ def main():
           defsfile_locked = False
           print("Error securing exclusive access to the definitions file")
           print("Maybe delete {} if it's stale?".format(
-			autotype_definitions_file + ".lock"))
+			definitions_file + ".lock"))
           return_status = -1
           continue
 
@@ -473,6 +473,6 @@ def main():
 
 
 
-# Jump to the main routine
+### Jump to the main routine
 if __name__ == "__main__":
   sys.exit(main())

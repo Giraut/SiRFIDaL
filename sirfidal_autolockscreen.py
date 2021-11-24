@@ -42,23 +42,7 @@ Note that unlocking the session manually with a password or with SiRFIDaL PAM
 remains possible even if the automatic session locker is running.
 """
 
-# Parameters
-screen_locker_lock_command = "cinnamon-screensaver-command -l"
-screen_locker_unlock_command = "cinnamon-screensaver-command -d"
-screen_locker_query_command = "cinnamon-screensaver-command -q"
-screen_locker_query_command_locked_regex = "is active"
-
-default_lock_timeout = 3
-default_unlock_timeout = 0
-default_do_authpersistent = False
-default_do_verbose = False
-
-check_user_authentication_every = .2 #s
-check_session_locker_status_every = 5 #s
-
-
-
-# Modules
+### Modules
 import re
 import sys
 import argparse
@@ -69,14 +53,19 @@ import sirfidal_client_class as scc
 
 
 
-# Constants
+### Parameters
+scc.load_parameters("sirfidal_autolockscreen")
+
+
+
+### Constants
 QUERY  = 0
 LOCK   = 1
 UNLOCK = 2
 
 
 
-# Functions
+### Routines
 def execute_command(command = None, verbose = False):
   """Execute command to query the state of the session locker, lock or unlock
      the session. Return -1 in case of error, 0 or 1 after a query command to
@@ -84,17 +73,17 @@ def execute_command(command = None, verbose = False):
   """
 
   if command == QUERY:
-    cmd = screen_locker_query_command
+    cmd = scc.screen_locker_query_command
     if verbose:
       sys.stdout.write("Session locker query")
 
   elif command == LOCK:
-    cmd = screen_locker_lock_command
+    cmd = scc.screen_locker_lock_command
     if verbose:
       sys.stdout.write("Session lock")
 
   elif command == UNLOCK:
-    cmd = screen_locker_unlock_command
+    cmd = scc.screen_locker_unlock_command
     if verbose:
       sys.stdout.write("Session unlock")
 
@@ -124,7 +113,7 @@ def execute_command(command = None, verbose = False):
     return -1
 
   if command == QUERY:
-    exit_status = 1 if re.search(screen_locker_query_command_locked_regex,
+    exit_status = 1 if re.search(scc.screen_locker_query_locked_regex,
 					query_result) else 0
 
     if verbose:
@@ -139,6 +128,7 @@ def execute_command(command = None, verbose = False):
 
 
 
+### Main routine
 def main():
   """Main routine
   """
@@ -154,23 +144,23 @@ def main():
     argparser.add_argument(
 	"-l", "--lockafter",
 	help = "Delay in sec before issuing lock commands (-1 = disabled) "
-		"[default: {}]".format(default_lock_timeout),
+		"[default: {}]".format(scc.default_lock_timeout),
 	type = int,
-	default = default_lock_timeout)
+	default = scc.default_lock_timeout)
 
     argparser.add_argument(
 	"-u", "--unlockafter",
 	help = "Delay in sec before issuing unlock commands (-1 = disabled) "
-		"[default: {}]".format(default_unlock_timeout),
+		"[default: {}]".format(scc.default_unlock_timeout),
 	type = int,
-	default = default_unlock_timeout)
+	default = scc.default_unlock_timeout)
 
     argparser.add_argument(
 	"-v", "--verbose",
 	help = "Print lock/unlock commands "\
-		"[default: {}]".format(default_do_verbose),
+		"[default: {}]".format(scc.default_do_verbose),
 	action = "store_true",
-	default = default_do_verbose)
+	default = scc.default_do_verbose)
 
     mutexargs = argparser.add_mutually_exclusive_group()
 
@@ -178,16 +168,16 @@ def main():
 	"-p", "--authpersistent",
 	help = "Trigger session lock/unlock depending on the presence of an "\
 		"authenticated UID"\
-	 	"[default: {}]".format(default_do_authpersistent),
+		"[default: {}]".format(scc.default_do_authpersistent),
 	action = "store_true",
-	default = default_do_authpersistent)
+	default = scc.default_do_authpersistent)
 
     mutexargs.add_argument(
 	"-e", "--authevents",
 	help = "Trigger session lock/unlock upon UID authentication events "\
-	 	"[default: {}]".format(not default_do_authpersistent),
+		"[default: {}]".format(not scc.default_do_authpersistent),
 	action = "store_true",
-	default = not default_do_authpersistent)
+	default = not scc.default_do_authpersistent)
 
     args = argparser.parse_args()
 
@@ -203,10 +193,10 @@ def main():
 
   # We don't have any parameters: use the default parameters
   else:
-    lock_timeout = default_lock_timeout
-    unlock_timeout = default_unlock_timeout
-    do_authpersistent = default_do_authpersistent
-    do_verbose = default_do_verbose
+    lock_timeout = scc.default_lock_timeout
+    unlock_timeout = scc.default_unlock_timeout
+    do_authpersistent = scc.default_do_authpersistent
+    do_verbose = scc.default_do_verbose
 
   session_locked = False	# Assume session locked without knowing better
   recheck_session_locked_tstamp = 0
@@ -261,7 +251,7 @@ def main():
 
       # If we don't have a new authentication status, continue trying to get one
       if user_authenticated is None:
-        sleep(check_user_authentication_every)
+        sleep(scc.check_user_auth_every)
         continue
 
       user_authenticated_prev = user_authenticated
@@ -284,7 +274,7 @@ def main():
         session_locked = session_locker_status > 0
 
       recheck_session_locked_tstamp = cycle_start_tstamp + \
-				check_session_locker_status_every
+				scc.check_session_lock_status_every
 
     # Actions to schedule or clear in persistent authentication mode
     if do_authpersistent:
@@ -333,10 +323,10 @@ def main():
       sched_action_tstamp = None
 
     # Sleep long enough to update the user's authentication status regularly
-    sleep(max(0, check_user_authentication_every + cycle_start_tstamp - time()))
+    sleep(max(0, scc.check_user_auth_every + cycle_start_tstamp - time()))
 
 
 
-# Jump to the main routine
+### Jump to the main routine
 if __name__ == "__main__":
   sys.exit(main())

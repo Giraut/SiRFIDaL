@@ -4,6 +4,8 @@
 
 ### Parameters
 _sirfidal_default_server_socket_path = "/tmp/sirfidal_server.socket"
+_sirfidal_default_global_config_file = "/etc/sirfidal_clients_parameters.py"
+_sirfidal_default_user_config_file = "~/.sirfidal_clients_parameters.py"
 _sirfidal_default_auth_wait = 2
 _sirfidal_default_useradm_uid_read_wait = 5
 
@@ -26,6 +28,34 @@ TIMEOUT  = -1
 NOAUTH   = 0
 OK       = 1
 AUTHOK   = 1
+
+
+
+### Routines
+def load_parameters(client_name, global_config_file = \
+			_sirfidal_default_global_config_file,
+			user_config_file = _sirfidal_default_user_config_file):
+  """Load a set of parameters from a sirfidal_clients_params dictionary, first
+  located in global_config_file, then in user_config_file. All the key / values
+  pairs are loaded in global().
+  """
+
+  errmsg = ""
+  load_success = False
+
+  for f in (global_config_file, user_config_file):
+    try:
+      exec(open(os.path.expanduser(f)).read())
+      client_params = locals()["sirfidal_clients_params"][client_name]
+      load_success = True
+      for k in client_params:
+        globals()[k] = client_params[k]
+    except Exception as e:
+      errmsg += (". Then e" if errmsg else "E") + \
+			"rror loading {}: {}".format(f, e)
+
+  if not load_success:
+    raise RuntimeError(errmsg)
 
 
 
