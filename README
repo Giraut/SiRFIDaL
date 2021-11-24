@@ -382,7 +382,7 @@ PAM configuration:
 
 
 
-Association / disassociating UIDS and usernames:
+Associating / disassociating UIDS and usernames:
 
   A user is only authenticated if at least one active UID is associated with
   their username. Therefore, one or more UIDs must first be enrolled for a
