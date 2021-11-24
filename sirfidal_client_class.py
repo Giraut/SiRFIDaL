@@ -37,7 +37,7 @@ def load_parameters(client_name, global_config_file = \
 			user_config_file = _sirfidal_default_user_config_file):
   """Load a set of parameters from a sirfidal_clients_params dictionary, first
   located in global_config_file, then in user_config_file. All the key / values
-  pairs are loaded in global().
+  pairs are loaded in globals().
   """
 
   errmsg = ""
