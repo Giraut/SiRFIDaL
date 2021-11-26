@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Icon=lock
+Exec=/usr/local/bin/sirfidal_autolockscreen.py
+X-GNOME-Autostart-enabled=false
+NoDisplay=false
+Hidden=false
+Name[en_US]=SiRFIDaL auto lock screen
+Comment[en_US]=SiRFIDaL automatic screen locker
+X-GNOME-Autostart-Delay=5

@@ -113,6 +113,7 @@ Installation:
       cp sirfidal_pam.config /usr/share/pam-configs
 
       cp *.service /lib/systemd/system
+      cp *.desktop /etc/xdg/autostart
 
       mkdir -p /usr/local/share/sounds/sirfidal
       cp sounds/* /usr/local/share/sounds/sirfidal
@@ -415,10 +416,7 @@ Optional user utilities configuration:
         sirfidal_autolockscreen in /etc/sirfidal_clients_parameters.py if
         needed. Alternatively, you may partly or fully override them with
         user-specific settings in ~/.sirfidal_clients_parameters.py
-      - In Preferences > Startup Applications, click on + > Custom command
-      - Enter the name "RFID NFC lock unlock screen" (or whatever you want)
-      - Enter the command "/usr/local/bin/sirfidal_autolockscreen.py"
-      - Click Add
+      - In Preferences > Startup Applications, enable SiRFIDaL auto lock screen
       - Select the entry and click on the gears icon to run it now
 
     * Running the autotyper:
@@ -427,12 +425,9 @@ Optional user utilities configuration:
         sirfidal_autotype in /etc/sirfidal_clients_parameters.py if
         needed. Alternatively, you may partly or fully override them with
         user-specific settings in ~/.sirfidal_clients_parameters.py
-      - In Preferences > Startup Applications, click on + > Custom command
-      - Enter the name "RFID NFC autotype" (or whatever you want)
-      - Enter the command "/usr/local/bin/sirfidal_autotype.py"
-      - Click Add
+      - In Preferences > Startup Applications, enable SiRFIDaL autotype
       - Select the entry and click on the gears icon to run it now
-      - In a terminal, run "sirfidal_autotype -w <string> [-n]" to configure a
+      - In a terminal, run "sirfidal_autotype.py -w <string>" to configure a
         string to send to a particular window
 
 

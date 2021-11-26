@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Icon=keyboard
+Exec=/usr/local/bin/sirfidal_autotype.py
+X-GNOME-Autostart-enabled=false
+NoDisplay=false
+Hidden=false
+Name[en_US]=SiRFIDaL autotype
+Comment[en_US]=SiRFIDaL automatic typer
+X-GNOME-Autostart-Delay=5
