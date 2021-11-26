@@ -1780,11 +1780,6 @@ def server(main_in_q, sock):
     creds = conn.getsockopt(SOL_SOCKET, SO_PEERCRED, struct.calcsize("3i"))
     pid, uid, gid = struct.unpack("3i", creds)
 
-    # If the user isn't local, close the connection
-    if is_remote_user(pid):
-      conn.close()
-      continue
-
     # Get the passwd name of the calling process' UID. It should exist, so if
     # we get an error, this is fishy and we should close the connection.
     try:
@@ -1797,19 +1792,14 @@ def server(main_in_q, sock):
     main_out_p, chandler_out_p = Pipe()
 
     # Spawn a client handler
-    Process(target = client_handler, args = (
-		  pid,
-		  uid,
-		  gid,
-		  pw_name,
-		  main_in_q,
-		  main_out_p,
-		  chandler_out_p,
-		  conn)).start()
+    Process(target = client_handler, args = (pid, uid, gid, pw_name,
+						is_remote_user(pid),
+						main_in_q, main_out_p,
+						chandler_out_p, conn)).start()
 
 
 
-def client_handler(pid, uid, gid, pw_name,
+def client_handler(pid, uid, gid, pw_name, is_remote_user,
 			main_in_q, main_out_p, chandler_out_p, conn):
   """Handler for communications between the client and the main process
   """
@@ -1992,10 +1982,15 @@ def client_handler(pid, uid, gid, pw_name,
               csendbuf = "NOAUTH"
 
           else:
-            # WAITAUTH request
+            # WAITAUTH request: if the user is remote, ignore the username they
+            # requested authentication for so the request always fails after
+            # the delay they requested, to prevent remote users from logging in
+            # using local credentials, yet making it looks like a legit auth
+            # request process
             m = re.findall("^WAITAUTH\s([^\s]+)\s([-+]?[0-9]+\.?[0-9]*)$", l)
             if m:
-              main_in_q.put((WAITAUTH_REQUEST, (pid, m[0][0], float(m[0][1]))))
+              main_in_q.put((WAITAUTH_REQUEST, (pid, None if is_remote_user \
+						else m[0][0], float(m[0][1]))))
 
             else:
               # ADDUSER request: the user must be root. If not, deny the request
@@ -2081,7 +2076,7 @@ def load_encruids():
 
   for entry in new_encruids:
     if not (isinstance(entry, list) and len(entry) == 2 and
-		  isinstance(entry[0], str) and isinstance(entry[1], str)):
+		isinstance(entry[0], str) and isinstance(entry[1], str)):
       encruids = []
       return None
 
@@ -2512,7 +2507,8 @@ def main():
           active_clients[cpid].new_request = False
 
         # Authentication request
-        elif active_clients[cpid].request == WAITAUTH_REQUEST:
+        elif active_clients[cpid].request == WAITAUTH_REQUEST and \
+		active_clients[cpid].user is not None:
 
           # First, try to find a cached authentication status for that user...
           if active_clients[cpid].user in auth_cache:
@@ -2527,7 +2523,7 @@ def main():
             for uid in active_uids:
               for registered_user, registered_uid_encr in encruids:
                 if registered_user == active_clients[cpid].user and crypt(
-			  uid, registered_uid_encr) == registered_uid_encr:
+			uid, registered_uid_encr) == registered_uid_encr:
                   auth = True		# User authenticated...
                   auth_uids.append(uid)	#...with this UID
 
@@ -2554,8 +2550,8 @@ def main():
           new_active_uid = (set(active_uids) - set(active_uids_prev)).pop()
           for registered_user, registered_uid_encr in new_encruids:
             if registered_user == active_clients[cpid].user and crypt(
-			  new_active_uid,
-			  registered_uid_encr) == registered_uid_encr:
+			new_active_uid,
+			registered_uid_encr) == registered_uid_encr:
               active_clients[cpid].main_out_p.send(
 						(ENCRUIDS_UPDATE_ERR_EXISTS,))
               active_clients[cpid].request = VOID_REQUEST
@@ -2596,8 +2592,8 @@ def main():
           for registered_user, registered_uid_encr in encruids:
             if registered_user == active_clients[cpid].user and (
 			active_clients[cpid].expires == None or crypt(
-			  new_active_uid,
-			  registered_uid_encr) == registered_uid_encr):
+			new_active_uid,
+			registered_uid_encr) == registered_uid_encr):
               assoc_deleted = True
             else:
               new_encruids.append([registered_user, registered_uid_encr])
@@ -2630,8 +2626,7 @@ def main():
 		(auth or active_clients[cpid].expires == None or \
 		now >= active_clients[cpid].expires):
         active_clients[cpid].main_out_p.send((AUTH_RESULT,
-		(AUTH_OK if auth else AUTH_NOK,
-		auth_uids if auth and \
+		(AUTH_OK if auth else AUTH_NOK, auth_uids if auth and \
 		active_clients[cpid].user == active_clients[cpid].pw_name else \
 		None)))
         active_clients[cpid].request = VOID_REQUEST
