@@ -198,16 +198,38 @@ def main():
 
   args = argparser.parse_args()
 
-  definitions_file = os.path.expanduser(args.defsfile) if args.defsfile else \
-			scc.default_definitions_file
-  defsfile_lock = FileLock(definitions_file + ".lock")
+  # Full path of the process lock file and lock
+  display = os.environ.get("DISPLAY")
+  proc_lock_file = os.path.expanduser("~/.sirfidal_autotype{}.lock".format(
+					"_{}".format(display) if display else \
+					""))
+  proc_lock = FileLock(proc_lock_file)
+  proc_locked = False
+
+  # Acquire the process lock if we haven't been asked to manipulate the
+  # definitions file or show window information. Abort if we can't to avoid
+  # running multiple times in the same session
+  if not args.showwininfo and args.writedefstring is None and \
+	not args.removedefstring:
+    try:
+      proc_lock.acquire(timeout = 0)
+      proc_locked = True
+    except:
+      print("Error: process already running for this session")
+      print("Maybe delete {} if it's stale?".format(proc_lock_file))
+      return -1
+
+  # Full path of the definitions file and lock
+  definitions_file = os.path.expanduser(args.defsfile if args.defsfile else \
+			scc.default_definitions_file)
+  definitions_file_lock_file = definitions_file + ".lock"
+  defsfile_lock = FileLock(definitions_file_lock_file)
+  defsfile_locked = False
 
   # If the definitions file doesn't exist, create it
   if not os.path.isfile(definitions_file) and not write_defsfile([]):
     print("Error creating the definitions file")
     return -1
-
-  defsfile_locked = False
 
   uids_set = None
 
@@ -228,6 +250,8 @@ def main():
 
     # Do return if we've been told to
     if return_status is not None:
+      if proc_locked:
+        proc_lock.release()
       return return_status
 
     # If our parent process has changed, the session that initially
@@ -242,7 +266,8 @@ def main():
         sc = scc.sirfidal_client()
 
       except KeyboardInterrupt:
-        return 0
+        return_status = 0
+        continue
 
       except:
         sleep(1)	# Wait a bit before reconnecting in case of error
@@ -263,7 +288,7 @@ def main():
           defsfile_locked = False
           print("Error securing exclusive access to the definitions file")
           print("Maybe delete {} if it's stale?".format(
-			definitions_file + ".lock"))
+			definitions_file_lock_file))
           return_status = -1
           continue
 
