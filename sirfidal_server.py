@@ -54,6 +54,9 @@ The script performs the following functions:
     For security reasons, the server will only honor this request for client
     processes run by root
 
+  - Acquire and release mutexes: useful for clients that need a simple locking
+    mechanism without resorting to OS-specific atomic functions
+
 Note that clients started by non-local users (for example logged in through
 telnet or SSH) will be denied services by the server. This is on purpose: the
 server authenticates users against UIDs read from local RFID or NFC readers.
@@ -106,6 +109,16 @@ Server replies: NONE
                 WRITEERR
                 OK
 		NOAUTH
+
+Service:        Acquire a named mutex
+Client sends:   MUTEXACQ <name> <max wait (int or float) in s>
+Server replies: OK
+                EXISTS
+
+Service:        Release a named mutex
+Client sends:   MUTEXREL <name>
+Server replies: OK
+                NONE
 
 The server will reply to any other request it doesn't understand with:
 		UNKNOWN
@@ -169,6 +182,9 @@ except Exception as e:
   print("Error reading {}: {}".format(config_file, e))
   sys.exit(1)
 
+max_mutexes_per_client = 2
+max_mutex_acq_wait = 30 #s
+
 
 
 ### Defines
@@ -192,8 +208,13 @@ ENCRUIDS_UPDATE_ERR_EXISTS  = 16
 ENCRUIDS_UPDATE_ERR_NONE    = 17
 ENCRUIDS_UPDATE_ERR_TIMEOUT = 18
 ENCRUIDS_UPDATE_ERR_WRITE   = 19
-CLIENT_HANDLER_STOP_REQUEST = 20
-CLIENT_HANDLER_STOP         = 21
+MUTEXACQ_REQUEST            = 20
+MUTEXREL_REQUEST            = 21
+MUTEX_OK                    = 22
+MUTEX_ERR_EXISTS            = 23
+MUTEX_ERR_NONE              = 24
+CLIENT_HANDLER_STOP_REQUEST = 25
+CLIENT_HANDLER_STOP         = 26
 
 VERBOSITY_SILENT = 0
 VERBOSITY_NORMAL = 1
@@ -218,7 +239,8 @@ class client:
     self.pw_name = None
     self.main_out_p = None
     self.request = None
-    self.user = None
+    self.name = None
+    self.mutexes = set()
     self.expires = None
     self.new_request = True
 
@@ -1920,6 +1942,22 @@ def client_handler(pid, uid, gid, pw_name, is_remote_user,
           csendbuf = "WRITEERR"
           continue
 
+        # The main process reports success for a mutex acquisition or release:
+        # notify the client
+        elif msg[0] == MUTEX_OK:
+          csendbuf = "OK"
+          continue
+
+        # The main process reports failure to acquire a mutex: notify the client
+        elif msg[0] == MUTEX_ERR_EXISTS:
+          csendbuf = "EXISTS"
+          continue
+
+        # The main process reports failure to release a mutex: notify the client
+        elif msg[0] == MUTEX_ERR_NONE:
+          csendbuf = "NONE"
+          continue
+
         # The main process reports a void request timeout (in other words, the
         # client has failed to place a valid request in time).
         elif msg[0] == VOID_REQUEST_TIMEOUT:
@@ -2014,9 +2052,23 @@ def client_handler(pid, uid, gid, pw_name, is_remote_user,
                   else:
                     csendbuf = "NOAUTH"
 
-                # Unknown or malformed request
                 else:
-                  csendbuf = "UNKNOWN"
+                  # MUTEXACQ request
+                  m = re.findall("^MUTEXACQ\s([^\s]+)\s([-+]?[0-9]+\.?[0-9]*)$",
+				 l)
+                  if m:
+                    main_in_q.put((MUTEXACQ_REQUEST, (pid, m[0][0],
+							float(m[0][1]))))
+
+                  else:
+                    # MUTEXREL request
+                    m = re.findall("^MUTEXREL\s([^\s]+)$", l)
+                    if m:
+                      main_in_q.put((MUTEXREL_REQUEST, (pid, m[0])))
+
+                    # Unknown or malformed request
+                    else:
+                      csendbuf = "UNKNOWN"
 
 
 
@@ -2420,10 +2472,10 @@ def main():
         # Update this client's request in the list of active requests. Cap the
         # delay the client may request
         active_clients[msg[1][0]].request = msg[0]
-        active_clients[msg[1][0]].user = msg[1][1]
+        active_clients[msg[1][0]].name = msg[1][1]
         active_clients[msg[1][0]].expires = None if msg[1][2] < 0 else \
-		now + (msg[1][2] if msg[1][2] <= max_auth_request_wait \
-		else max_auth_request_wait)
+			now + (msg[1][2] if msg[1][2] <= max_auth_request_wait \
+			else max_auth_request_wait)
 
       # The client requested to watch the evolution of the number of active
       # UIDs or the evolution of the list of UIDs themselves in real time
@@ -2433,8 +2485,53 @@ def main():
         # No timeout for this request: it's up to the client to close the
         # socket when it's done
         active_clients[msg[1][0]].request = msg[0]
-        active_clients[msg[1][0]].user = None
+        active_clients[msg[1][0]].name = None
         active_clients[msg[1][0]].expires = None
+
+      # The client requested to acquire a named mutex
+      elif msg[0] == MUTEXACQ_REQUEST:
+
+        # Does the client already have a mutex with that name or too many
+        # mutexes already?
+        if len(active_clients[msg[1][0]].mutexes) >= max_mutexes_per_client or \
+		msg[1][1] in active_clients[msg[1][0]].mutexes:
+
+          # Send MUTEX_ERR_EXISTS to the client and replace the request with a
+          # fresh void request and associated timeout
+          active_clients[msg[1][0]].main_out_p.send((MUTEX_ERR_EXISTS,))
+          active_clients[msg[1][0]].request = VOID_REQUEST
+          active_clients[msg[1][0]].expires = now + \
+			client_force_close_socket_timeout
+
+        else:
+          # Update this client's request in the list of active requests. Cap
+          # the delay the client may request to acquire the mutex
+          active_clients[msg[1][0]].request = msg[0]
+          active_clients[msg[1][0]].name = msg[1][1]
+          active_clients[msg[1][0]].expires = None if msg[1][2] < 0 else \
+			now + (msg[1][2] if msg[1][2] <= max_mutex_acq_wait \
+			else max_mutex_acq_wait)
+
+      # The client requested to release a named mutex
+      elif msg[0] == MUTEXREL_REQUEST:
+
+        # Does the client have a mutex with that name?
+        if msg[1][1] in active_clients[msg[1][0]].mutexes:
+
+          # Remove the mutex from the client's set of mutexes and notify the
+          # client of the success
+          active_clients[msg[1][0]].mutexes -= set([msg[1][1]])
+          active_clients[msg[1][0]].main_out_p.send((MUTEX_OK,))
+
+        else:
+          # Send MUTEX_ERR_NONE to the client and replace the request with a
+          # fresh void request and associated timeout
+          active_clients[msg[1][0]].main_out_p.send((MUTEX_ERR_NONE,))
+
+        # Replace the request with a fresh void request and associated timeout
+        active_clients[msg[1][0]].request = VOID_REQUEST
+        active_clients[msg[1][0]].expires = now + \
+			client_force_close_socket_timeout
 
       # Remove a client from the list of active clients and tell the handler
       # to stop
@@ -2508,13 +2605,13 @@ def main():
 
         # Authentication request
         elif active_clients[cpid].request == WAITAUTH_REQUEST and \
-		active_clients[cpid].user is not None:
+		active_clients[cpid].name is not None:
 
           # First, try to find a cached authentication status for that user...
-          if active_clients[cpid].user in auth_cache:
+          if active_clients[cpid].name in auth_cache:
 
-            auth = auth_cache[active_clients[cpid].user]
-            auth_uids = auth_uids_cache[active_clients[cpid].user]
+            auth = auth_cache[active_clients[cpid].name]
+            auth_uids = auth_uids_cache[active_clients[cpid].name]
 
           # otherwise try to match all the active UIDs with the registered
           # encrypted UIDs associated with that user
@@ -2522,7 +2619,7 @@ def main():
 
             for uid in active_uids:
               for registered_user, registered_uid_encr in encruids:
-                if registered_user == active_clients[cpid].user and crypt(
+                if registered_user == active_clients[cpid].name and crypt(
 			uid, registered_uid_encr) == registered_uid_encr:
                   auth = True		# User authenticated...
                   auth_uids.append(uid)	#...with this UID
@@ -2532,8 +2629,8 @@ def main():
             # isn't reloaded - to avoid calling crypt() each time a requesting
             # process asks an authentication and nothing has changed since the
             # previous request
-            auth_cache[active_clients[cpid].user] = auth
-            auth_uids_cache[active_clients[cpid].user] = auth_uids
+            auth_cache[active_clients[cpid].name] = auth
+            auth_uids_cache[active_clients[cpid].name] = auth_uids
 
         # Add user request: if we have an active UIDs update and exactly one
         # more active UID in the new list of active UIDs, associate that new
@@ -2549,7 +2646,7 @@ def main():
           # request and associated timeout
           new_active_uid = (set(active_uids) - set(active_uids_prev)).pop()
           for registered_user, registered_uid_encr in new_encruids:
-            if registered_user == active_clients[cpid].user and crypt(
+            if registered_user == active_clients[cpid].name and crypt(
 			new_active_uid,
 			registered_uid_encr) == registered_uid_encr:
               active_clients[cpid].main_out_p.send(
@@ -2560,10 +2657,10 @@ def main():
               break;
 
           # Encrypt and associate the UID with the user, write the new
-          # encrypted UIDs file and replace the request with fresh void request
-          # and associated timeout
+          # encrypted UIDs file and replace the request with a fresh void
+          # request and associated timeout
           if active_clients[cpid].request != VOID_REQUEST:
-            new_encruids.append([active_clients[cpid].user, crypt(
+            new_encruids.append([active_clients[cpid].name, crypt(
 				new_active_uid, mksalt())])
             if write_encruids(new_encruids):
               active_clients[cpid].main_out_p.send((ENCRUIDS_UPDATE_OK,))
@@ -2590,7 +2687,7 @@ def main():
           new_active_uid = (set(active_uids) - set(active_uids_prev)).pop() \
 				if active_uids_update else ""
           for registered_user, registered_uid_encr in encruids:
-            if registered_user == active_clients[cpid].user and (
+            if registered_user == active_clients[cpid].name and (
 			active_clients[cpid].expires == None or crypt(
 			new_active_uid,
 			registered_uid_encr) == registered_uid_encr):
@@ -2599,9 +2696,8 @@ def main():
               new_encruids.append([registered_user, registered_uid_encr])
 
           # If we found one or more associations to delete, write the new
-          # encrypted UIDs file. Otherwise notify the client. Then replace the
-          # request with a fresh void request and associated
-          # timeout
+          # encrypted UIDs file. Otherwise notify the client handler. Then
+          # replace the request with a fresh void request and associated timeout
           if assoc_deleted:
             if write_encruids(new_encruids):
               active_clients[cpid].main_out_p.send((ENCRUIDS_UPDATE_OK,))
@@ -2612,6 +2708,20 @@ def main():
 
           active_clients[cpid].request = VOID_REQUEST
           active_clients[cpid].expires = now + client_force_close_socket_timeout
+
+        # Named mutex acquisition: check that the requested mutex name isn't
+        # used by any other client. If it is free to use, assign it to this
+        # client, notify the client handler then replace the request with a
+        # fresh void request and associated timeout
+        elif active_clients[cpid].request == MUTEXACQ_REQUEST:
+
+          if active_clients[cpid].name not in [m for cpid in active_clients \
+					for m in active_clients[cpid].mutexes]:
+            active_clients[cpid].mutexes.add(active_clients[cpid].name)
+            active_clients[cpid].main_out_p.send((MUTEX_OK,))
+            active_clients[cpid].request = VOID_REQUEST
+            active_clients[cpid].expires = now + \
+			client_force_close_socket_timeout
 
 
 
@@ -2627,7 +2737,7 @@ def main():
 		now >= active_clients[cpid].expires):
         active_clients[cpid].main_out_p.send((AUTH_RESULT,
 		(AUTH_OK if auth else AUTH_NOK, auth_uids if auth and \
-		active_clients[cpid].user == active_clients[cpid].pw_name else \
+		active_clients[cpid].name == active_clients[cpid].pw_name else \
 		None)))
         active_clients[cpid].request = VOID_REQUEST
         active_clients[cpid].expires = now + client_force_close_socket_timeout
@@ -2640,6 +2750,17 @@ def main():
 		(active_clients[cpid].expires == None or \
 		now >= active_clients[cpid].expires):
         active_clients[cpid].main_out_p.send((ENCRUIDS_UPDATE_ERR_TIMEOUT,))
+        active_clients[cpid].request = VOID_REQUEST
+        active_clients[cpid].expires = now + client_force_close_socket_timeout
+
+      # If a named mutex acquisition request has timed out, it means a mutex of
+      # that name is held by another client and wasn't released in time to be
+      # assigned to this client. Notify the client handler then replace the
+      # request with a fresh void request and associated timeout
+      if active_clients[cpid].request == MUTEXACQ_REQUEST and \
+		(active_clients[cpid].expires == None or \
+		now >= active_clients[cpid].expires):
+        active_clients[cpid].main_out_p.send((MUTEX_ERR_EXISTS,))
         active_clients[cpid].request = VOID_REQUEST
         active_clients[cpid].expires = now + client_force_close_socket_timeout
 

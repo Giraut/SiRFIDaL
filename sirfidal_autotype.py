@@ -29,7 +29,6 @@ import argparse
 import Xlib.display
 from time import sleep
 from psutil import Process
-from filelock import FileLock
 from base64 import b64encode, b64decode
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 import sirfidal_client_class as scc
@@ -56,7 +55,6 @@ scc.load_parameters("sirfidal_autotype")
 definitions_file = None
 defsfile_mtime = None
 defsfile = []
-defsfile_lock = None
 defsfile_locked = False
 
 
@@ -198,32 +196,13 @@ def main():
 
   args = argparser.parse_args()
 
-  # Full path of the process lock file and lock
+  # Name of the mutex to ensure only one process runs per session
   display = os.environ.get("DISPLAY")
-  proc_lock_file = os.path.expanduser("~/.sirfidal_autotype{}.lock".format(
-					"_{}".format(display) if display else \
-					""))
-  proc_lock = FileLock(proc_lock_file)
-  proc_locked = False
+  proc_mutex = "autotype{}".format(display if display else "")
 
-  # Acquire the process lock if we haven't been asked to manipulate the
-  # definitions file or show window information. Abort if we can't to avoid
-  # running multiple times in the same session
-  if not args.showwininfo and args.writedefstring is None and \
-	not args.removedefstring:
-    try:
-      proc_lock.acquire(timeout = 0)
-      proc_locked = True
-    except:
-      print("Error: process already running for this session")
-      print("Maybe delete {} if it's stale?".format(proc_lock_file))
-      return -1
-
-  # Full path of the definitions file and lock
+  # Full path of the definitions file
   definitions_file = os.path.expanduser(args.defsfile if args.defsfile else \
 			scc.default_definitions_file)
-  definitions_file_lock_file = definitions_file + ".lock"
-  defsfile_lock = FileLock(definitions_file_lock_file)
   defsfile_locked = False
 
   # If the definitions file doesn't exist, create it
@@ -234,7 +213,6 @@ def main():
   uids_set = None
 
   release_defsfile_lock = False
-  return_status = None
 
   sc = None
 
@@ -244,21 +222,17 @@ def main():
     # Release the definition file lock if needed
     if release_defsfile_lock:
       if defsfile_locked:
-        defsfile_lock.release()
+        try:
+          sc.mutex_release(definitions_file)
+        except Exception as e:
+          pass
         defsfile_locked = False
       release_defsfile_lock = False
-
-    # Do return if we've been told to
-    if return_status is not None:
-      if proc_locked:
-        proc_lock.release()
-      return return_status
 
     # If our parent process has changed, the session that initially
     # started us has probably terminated, in which case so should we
     if Process().parent() != ppid:
-      return_status = 0
-      continue
+      return 0
 
     # Connect to the server
     if sc is None:
@@ -266,31 +240,40 @@ def main():
         sc = scc.sirfidal_client()
 
       except KeyboardInterrupt:
-        return_status = 0
-        continue
+        return 0
 
       except:
         sleep(1)	# Wait a bit before reconnecting in case of error
         sc = None
         continue
 
-      # If we're asked to manipulate the definition file, lock it before
-      # the user authenticates, so another instance of the program can't
-      # trigger an autotype with an old definition before we've had a
-      # chance to change the file
-      if args.writedefstring is not None or args.removedefstring:
+      # Have we been asked to manipulate the definitions file or show window
+      # information?
+      if args.showwininfo or args.writedefstring is not None or \
+		args.removedefstring:
 
+        # Lock the definitions file before the user authenticates, so another
+        # instance of the program can't trigger an autotype while we're busy
+        # modifying the definitions file or showing window information
         try:
-          defsfile_lock.acquire(timeout = 1)
-          defsfile_locked = True
-
-        except:
+          if sc.mutex_acquire(definitions_file, 1) == scc.OK:
+            defsfile_locked = True
+          else:
+            defsfile_locked = False
+        except Exception as e:
           defsfile_locked = False
+
+        if defsfile_locked == False:
           print("Error securing exclusive access to the definitions file")
-          print("Maybe delete {} if it's stale?".format(
-			definitions_file_lock_file))
-          return_status = -1
-          continue
+          return -1
+
+      else:
+
+        # Acquire the process mutex. Abort if we can't to avoid running
+        # multiple times in the same session
+        if sc.mutex_acquire(proc_mutex, 0) == scc.EXISTS:
+          print("Error: process already running for this session")
+          return -1
 
       uids_set = None
 
@@ -300,7 +283,7 @@ def main():
 
     except KeyboardInterrupt:
       release_defsfile_lock = True
-      return_status = 0
+      return 0
       continue
 
     except:
@@ -361,19 +344,22 @@ def main():
         print("    class:       {}".format(wmclass[0]))
         print("    Title:       {}".format(wmname))
 
-        return_status = 0
-        continue
+        # Sleep a bit before returning and unlocking the definitions file to
+        # give another process waiting on a successful authentication to
+        # autotype something a chance to choke on the mutex, so it won't
+        # immediately autotype a matching definition for this window
+        sleep(1)
+
+        return 0
 
       # Create an entry, replace an existing entry or delete any entries for
-      # this window in the
-      # definitions file
+      # this window in the definitions file
       elif args.writedefstring is not None or args.removedefstring:
 
         # Load the existing definitions file if one exists
         if not load_defsfile():
           print("Error loading the definitions file")
-          return_status = -1
-          continue
+          return -1
 
         # Create the contents of the new definitions file
         new_defsfile = []
@@ -424,31 +410,35 @@ def main():
           else:
             print("No entry found for this window")
 
-        return_status = 0
+        retcode = 0
 
         # Save the new definition file
         if defsfile_modified and not write_defsfile(new_defsfile):
 
           print("Error writing the definitions file")
-          return_status = -1
+          retcode = -1
 
-        # Sleep a bit before releasing the lockfile and returning, to give
-        # another process waiting on a successful authentication to autotype
-        # something a chance to choke on the lock, so it won't immediately
-        # autotype the new string
+        # Sleep a bit before returning and unlocking the definitions file to
+        # give another process waiting on a successful authentication to
+        # autotype something a chance to choke on the mutex, so it won't
+        # immediately autotype the new string for this window
         sleep(1)
-        continue
+
+        return retcode
 
       # "Type" string if we find a definition matching the window currently in
       # focus
       else:
 
-        # Acquire the lock to the definitions file. If we can't, quietly pass
+        # Acquire the mutex to the definitions file. If we can't, quietly pass
         # our turn
         try:
-          defsfile_lock.acquire(timeout = 0)
-          defsfile_locked = True
-        except:
+          if sc.mutex_acquire(definitions_file, 0) == scc.OK:
+            defsfile_locked = True
+          else:
+            defsfile_locked = False
+            continue
+        except Exception as e:
           defsfile_locked = False
           continue
 

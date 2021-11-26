@@ -8,6 +8,7 @@ _sirfidal_default_global_config_file = "/etc/sirfidal_clients_parameters.py"
 _sirfidal_default_user_config_file = "~/.sirfidal_clients_parameters.py"
 _sirfidal_default_auth_wait = 2
 _sirfidal_default_useradm_uid_read_wait = 5
+_sirfidal_default_mutex_acq_wait = 5
 
 
 
@@ -154,7 +155,7 @@ class sirfidal_client:
       user = pwd.getpwuid(os.getuid()).pw_name
 
     # Check that the username is valid
-    if not user and user.isprintable():
+    if not (user and user.isprintable()):
       raise ValueError("invalid username")
 
     # Send the WAITAUTH command to the server and get the reply
@@ -187,7 +188,7 @@ class sirfidal_client:
       user = pwd.getpwuid(os.getuid()).pw_name
 
     # Check that the username is valid
-    if not user and user.isprintable():
+    if not (user and user.isprintable()):
       raise ValueError("invalid username")
 
     # Send the command to the server and get the reply
@@ -303,6 +304,56 @@ class sirfidal_client:
         break
 
       reply = self._command()
+
+
+
+  def mutex_acquire(self, name, wait = _sirfidal_default_mutex_acq_wait):
+    """Acquire a named mutex. If wait isn't specified, use the default wait for
+    mutex acquisition.
+    Return OK if the mutex was acquired, or EXISTS if the mutex already exists
+    or if the client already has acquired too many mutexes already
+    """
+
+    # Check the wait parameter
+    if wait < 0:
+      raise ValueError("invalid wait")
+
+    # Check that the mutex name is valid
+    if not (name and name.isprintable()):
+      raise ValueError("invalid mutex name")
+
+    # Send the MUTEXACQ command to the server and get the reply
+    reply = self._command("MUTEXACQ {} {}".format(name, wait),
+				timeout = wait + 5)
+
+    # Check that the reply is valid
+    if reply in ("OK", "EXISTS"):
+      return OK if reply == "OK" else EXISTS
+
+    else:
+      raise ValueError("unknown server reply '{}'".format(reply))
+
+
+
+  def mutex_release(self, name):
+    """Release a named mutex.
+    Return OK if the mutex was released, or NONE if the mutex wasn't acquired
+    in the first place
+    """
+
+    # Check that the mutex name is valid
+    if not (name and name.isprintable()):
+      raise ValueError("invalid mutex name")
+
+    # Send the MUTEXREL command to the server and get the reply
+    reply = self._command("MUTEXREL {}".format(name), timeout = 5)
+
+    # Check that the reply is valid
+    if reply in ("OK", "NONE"):
+      return OK if reply == "OK" else NONE
+
+    else:
+      raise ValueError("unknown server reply '{}'".format(reply))
 
 
 

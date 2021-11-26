@@ -49,7 +49,6 @@ import sys
 import argparse
 from psutil import Process
 from time import time, sleep
-from filelock import FileLock
 from subprocess import Popen, PIPE
 import sirfidal_client_class as scc
 
@@ -200,20 +199,9 @@ def main():
     do_authpersistent = scc.default_do_authpersistent
     do_verbose = scc.default_do_verbose
 
-  # Full path of the process lock file and lock
+  # Name of the mutex to ensure only one process runs per session
   display = os.environ.get("DISPLAY")
-  proc_lock_file = os.path.expanduser("~/.sirfidal_autolockscreen{}.lock"
-					.format("_{}".format(display) \
-					if display else ""))
-  proc_lock = FileLock(proc_lock_file)
-
-  # Acquire the process lock to avoid running multiple times in the same session
-  try:
-    proc_lock.acquire(timeout = 0)
-  except:
-    print("Error: process already running for this session")
-    print("Maybe delete {} if it's stale?".format(proc_lock_file))
-    return -1
+  proc_mutex = "autolockscreen{}".format(display if display else "")
 
   session_locked = False	# Assume session locked without knowing better
   recheck_session_locked_tstamp = 0
@@ -233,20 +221,23 @@ def main():
     # If our parent process has changed, the session that initially
     # started us has probably terminated, in which case so should we
     if Process().parent() != ppid:
-      proc_lock.release()
       return 0
 
-    # Connect to the server
+    # Connect to the server and try to acquire the process mutex. If it's
+    # already been acquired, exit as another process is already running
     if sc is None:
       try:
         sc = scc.sirfidal_client()
 
       except KeyboardInterrupt:
-        proc_lock.release()
         return 0
 
       except:
         sc = None
+
+      if sc is not None and sc.mutex_acquire(proc_mutex, 0) == scc.EXISTS:
+        print("Error: process already running for this session")
+        return -1
 
     # Get the user's authentication status
     if sc is not None:
@@ -256,7 +247,6 @@ def main():
         user_authenticated = r != 0
 
       except KeyboardInterrupt:
-        proc_lock.release()
         return 0
 
       except:
