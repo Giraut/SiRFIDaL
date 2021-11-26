@@ -282,9 +282,7 @@ def main():
       _, uids = sc.waitauth(wait = 0 if uids_set is None else 1)
 
     except KeyboardInterrupt:
-      release_defsfile_lock = True
       return 0
-      continue
 
     except:
       try:
