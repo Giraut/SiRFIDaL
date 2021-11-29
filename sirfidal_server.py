@@ -478,6 +478,10 @@ def halo_listener(main_in_q, listener_id, params):
   # Parameters
   device = params["device"]
   new_firmware = params["new_firmware"]
+  auto_rescan = params["auto_rescan"]
+  alive_min_temp = params["alive_min_temp"]
+  alive_max_temp = params["alive_max_temp"]
+  alive_prefix = params["alive_prefix"].upper()
 
   serdev = None
 
@@ -519,13 +523,40 @@ def halo_listener(main_in_q, listener_id, params):
       sleep(2)	# Wait a bit to reopen the device
       continue
 
-    # Send the connection request to the scanner
-    if scanner_state == 0:
-      sleep(.5)
-      serdev.write(b"PA\r")
-      scanner_state = 1
+    # Send the appropriate command to the scanner
+    if scanner_state in (0, 6, 10):
 
-    # Read data from the reader
+      sleep(.5)
+
+      # Connect command
+      if scanner_state == 0:
+        cmd = b"PA"
+
+      # Serial output on command
+      elif scanner_state == 6:
+        cmd = b"RO1" if new_firmware else b"RO\x01"
+
+      # Auto-rescan command
+      elif scanner_state == 10:
+        cmd = b"SX"
+
+      try:
+        serdev.write(cmd + b"\r")
+
+      except KeyboardInterrupt:
+        return -1
+
+      except Exception as e:
+        log(VERBOSITY_DEBUG, listener_id, e)
+        close_device = True
+        continue
+
+      scanner_state += 1
+
+    # Read data from the reader: wait forever when waiting for the UID, wait
+    # only a fraction of a second when waiting for the subsequent temperature
+    # value
+    serdev.timeout = 0.1 if scanner_state == 9 else None
     try:
       c = serdev.read(1).decode("ascii")
 
@@ -537,43 +568,84 @@ def halo_listener(main_in_q, listener_id, params):
       close_device = True
       continue
 
+    # Did we read nothing at all?
     if not c:
-      log(VERBOSITY_DEBUG, listener_id, "Error reading from {}".format(device))
-      close_device = True
-      continue
+
+      # If we were waiting for a temperature value, we timed out. So simply
+      # send the UID to the main process as-is if we have one
+      if scanner_state == 9:
+        if uid:
+          main_in_q.put((LISTENER_UIDS_UPDATE, (listener_id, (uid,))))
+          uid = ""
+        scanner_state = 10 if new_firmware and auto_rescan else 8
+        continue
+
+      # If we weren't waiting for a temperature value, we had no timeout set so
+      # this is a genuine read error
+      else:
+        log(VERBOSITY_DEBUG, listener_id, "Error reading from {}"
+						.format(device))
+        close_device = True
+        continue
 
     # Receive the connection acknowledgment
-    if 1 <= scanner_state <=5:
+    if 1 <= scanner_state <= 5:
       if c == "Halo\x00"[scanner_state - 1]:
         scanner_state += 1
       else:
         scanner_state = 0
 
-    # Send the command to put the serial output on
-    if scanner_state == 6:
-      sleep(.5)
-      serdev.write(b"RO1\r" if new_firmware else b"RO\x01\r")
-      scanner_state = 7
-
-    # Receive the serial output on aknowledgement
+    # Receive the serial output on acknowledgement
     elif scanner_state == 7:
       if c == "Z":
         scanner_state = 8
-        uid = ""
+        recvbuf = ""
       elif c == "?":
         scanner_state = 6
       else:
         scanner_state = 0
 
-    # Receive UIDs
+    # Receive a UID
     elif scanner_state == 8:
       if c == "\r":
+        if recvbuf:
+          uid = recvbuf
+          recvbuf = ""
+          scanner_state = 9
+
+      elif c in hexdigits and len(recvbuf) < 256:
+        recvbuf += c.upper()
+
+    # Receive a temperature value. If it lies between the minimum and maximum
+    # temperature values for a living being, prefix the UID with the special
+    # "live" hex prefix - the idea being that cloned chips with the same UID
+    # but without a temperature value, or with a temperature value that is not
+    # compatible with a live implant, will not get prefixed, therefore will
+    # not authenticate a previously registered UID with the "live" prefix
+    elif scanner_state == 9:
+      if c == "\r":
         if uid:
+          if re.match("^[0-9]+\.[0-9]+C$", recvbuf):
+            temp = float(recvbuf[:-1])
+            if alive_min_temp <= temp <= alive_max_temp:
+              uid = alive_prefix + uid
           main_in_q.put((LISTENER_UIDS_UPDATE, (listener_id, (uid,))))
           uid = ""
+        recvbuf = ""
+        scanner_state = 10 if new_firmware and auto_rescan else 8
 
-      elif c in hexdigits and len(uid) < 256:
-        uid += c.upper()
+      elif c in "0123456789.C" and len(recvbuf) < 256:
+        recvbuf += c.upper()
+
+    # Receive the auto-restart scan acknowledgement
+    elif scanner_state == 11:
+      if c == "Z":
+        scanner_state = 8
+        recvbuf = ""
+      elif c == "?":
+        scanner_state = 11
+      else:
+        scanner_state = 0
 
 
 
@@ -1360,7 +1432,7 @@ def chameleon_listener(main_in_q, listener_id, params):
         reader_state = 8
 
       # Are we waiting for a UID?
-      elif reader_state == 10 and re.match("^[0-9a-zA-Z]+$", l):
+      elif reader_state == 10 and re.match("^[0-9A-F]+$", l, re.I):
 
         # Send it as a one-UID active UIDs list to the main
         # process
@@ -2210,7 +2282,11 @@ def main():
     # Halo scanner
     "halo":	{
       "device":		((str,), lambda v: v != ""),
-      "new_firmware":	((bool,), None)
+      "new_firmware":	((bool,), None),
+      "auto_rescan":	((bool,), None),
+      "alive_min_temp":	((int, float), lambda v: v >= 10),
+      "alive_max_temp":	((int, float), lambda v: v <= 100),
+      "alive_prefix":	((str,), lambda v: re.match("^[0-9A-F]+$", v, re.I))
     },
 
     # HID reader

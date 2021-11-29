@@ -29,7 +29,11 @@ readers = {
     "type":		"halo",
     "uids_timeout":	1, #s
     "device":		"/dev/ttyACM0",
-    "new_firmware":	True
+    "new_firmware":	True,
+    "auto_rescan":	False,
+    "alive_min_temp":	30.0, #C - Only Destron Fearing Bio Thermo & F/W >= 8.0
+    "alive_max_temp":	43.0, #C - Only Destron Fearing Bio Thermo & F/W >= 8.0
+    "alive_uid_prefix":	"AA"  # Only Destron Fearing Bio Thermo & F/W >= 8.0
   },
 
   # HID reader

@@ -246,6 +246,21 @@ Server configuration:
       - device:         Serial device file
       - new_firmware:	Set to True for use with Halo Scanners with firmware
                         version 7.0 or above
+      - auto_rescan:    For new firmwares that support th scan command,
+                        automatically trigger a new scan after a UID has been
+                        read, so the device is polled continuously
+      - alive_min_temp: With firmware version 8.0 or above, if a Destron Fearing
+                        with Bio Thermo implant is read, minimum temperature
+                        below which the implant isn't considered implanted in a
+                        living being
+      - alive_max_temp: With firmware version 8.0 or above, if a Destron Fearing
+                        with Bio Thermo implant is read, maximum temperature
+                        above which the implant isn't considered implanted in a
+                        living being
+      - alive_prefix:   With firmware version 8.0 or above, if a Destron Fearing
+                        with Bio Thermo implant is read and the reported
+                        temperature is between the minimum and maximum "living
+                        being" values above, hex digits to prefix the UID with
 
     * Configuration options for HID readers - aka keyboard wedges:
 
