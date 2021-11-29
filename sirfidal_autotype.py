@@ -24,12 +24,20 @@ import re
 import os
 import sys
 import json
+import psutil
 import secrets
 import argparse
 import Xlib.display
+from tkinter import *
 from time import sleep
-from psutil import Process
+from Xlib import X, XK
+from Xlib.ext import record
+from Xlib.protocol import rq
+from tkinter import messagebox
+from signal import signal, SIGCHLD
+from setproctitle import setproctitle
 from base64 import b64encode, b64decode
+from multiprocessing import Process, Queue
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 import sirfidal_client_class as scc
 
@@ -48,6 +56,14 @@ except:
 
 ### Parameters
 scc.load_parameters("sirfidal_autotype")
+edit_scan_hotkeys = set(scc.edit_scan_hotkeys) \
+			if "edit_scan_hotkeys" in dir(scc) else None
+
+
+
+### Defines
+KEYBOARD_EVENT_LISTENER_UPDATE = 0
+GUI_ACTION = 1
 
 
 
@@ -121,8 +137,11 @@ def write_defsfile(new_defsfile):
 
   return True
 
-# Encrypt a plaintext string into an encrypted base64 string
+
+
 def encrypt(pst, key):
+  """Encrypt a plaintext string into an encrypted base64 string
+  """
 
   # Repeat the key to make it 32 bytes long (AES256 needs 32 bytes)
   key = (key.encode("ascii") * 32)[:32]
@@ -136,8 +155,9 @@ def encrypt(pst, key):
 
 
 
-# Decrypt an encrypted base64 string into a plaintext string
 def decrypt(bes, key):
+  """Decrypt an encrypted base64 string into a plaintext string
+  """
 
   # Repeat the key to make it 32 bytes long (AES256 needs 32 bytes)
   key = (key.encode("ascii") * 32)[:32]
@@ -150,6 +170,224 @@ def decrypt(bes, key):
 
 
 
+def update_defsfile(new_entry, winapp, winclass, winname, auth_uid):
+  """Update the definitions file: if new_entry is not None, try to update the
+  definitions associated with winapp, winclass and winname with this new entry.
+  If it is None, delete the definition.
+  Return (retcode, message)
+  """
+
+  # Load the existing definitions file if one exists
+  if not load_defsfile():
+    return (-1, "Error loading the definitions file")
+
+  # Create the contents of the new definitions file
+  new_defsfile = []
+  defsfile_modified = False
+  entry_appended = False
+
+  for d in defsfile:
+
+    # Find a matching window in the definitions file
+    if d[0] == winapp and d[1] == winclass and d[2] == winname:
+
+      # Decrypt the encrypted string associated with the window
+      s = decrypt(d[3], auth_uid)
+
+      # If the decryption didn't succeed, try the next definition
+      if s is None:
+        new_defsfile.append(d)
+        continue
+
+      # The decryption succeeded: change the string definition if we have a new
+      # entry or forget it if we don't
+      if not defsfile_modified:
+
+        if new_entry is not None:
+          new_defsfile.append([winapp, winclass, winname,
+				encrypt(new_entry, auth_uid)])
+
+        defsfile_modified = True
+        retmsg = "{} existing entry for this window".format("Updated" \
+			if new_entry is not None else "Removed")
+        retcode = 0
+
+    else:
+      new_defsfile.append(d)
+
+  # If we haven't updated or deleted a definition, we should add one
+  if not defsfile_modified:
+
+    if new_entry is not None:
+
+      new_defsfile.append([winapp, winclass, winname,
+				encrypt(new_entry, auth_uid)])
+      defsfile_modified = True
+      retmsg = "Created entry for this window"
+      retcode = 0
+
+    else:
+      retmsg = "No entry found for this window"
+      retcode = -1
+
+  # Save the new definition file
+  if defsfile_modified and not write_defsfile(new_defsfile):
+
+    retmsg = "Error writing the definitions file"
+    retcode = -1
+
+  return (retcode, retmsg)
+
+
+
+def keyboard_event_listener(main_in_q):
+  """Keyboard event listener
+  """
+
+  setproctitle("sirfidal_autotype_keyboard_event_listener")
+
+  # Create a dictionary of keysyms to XK_* key names
+  keysym_to_keyname = {}
+  for xk in dir(XK):
+    if xk[:3] == "XK_":
+      keysym_to_keyname[getattr(XK, xk)] = xk[3:]
+
+  # Get the display
+  display = Xlib.display.Display()
+
+  # Event handler proper
+  def event_handler(reply):
+    data = reply.data
+    while data:
+      event, data = rq.EventField(None).parse_binary_value(
+					data, display.display, None, None)
+      if event.type in (X.KeyPress, X.KeyRelease):
+        keysym = display.keycode_to_keysym(event.detail, 0)
+        keyname = keysym_to_keyname.get(keysym)
+        main_in_q.put((KEYBOARD_EVENT_LISTENER_UPDATE,
+				(keyname if keyname is not None else keysym,
+				event.type == X.KeyPress)))
+
+  # Create a recoding context
+  ctx = display.record_create_context(0, [record.AllClients], [{
+					"core_requests": (0, 0),
+					"core_replies": (0, 0),
+					"ext_requests": (0, 0, 0, 0),
+					"ext_replies": (0, 0, 0, 0),
+					"delivered_events": (0, 0),
+					"device_events": (X.KeyReleaseMask,
+							X.ButtonReleaseMask),
+					"errors": (0, 0),
+					"client_started": False,
+					"client_died": False}])
+
+  # Enable the recording context (from which we won't return)
+  display.record_enable_context(ctx, lambda reply: event_handler(reply))
+
+
+
+def gui_panel(main_in_q, auth_uid, winapp, winclass, winname):
+  """Display a simple GUI panel to let the user associate a string with a UID
+  and a particular window, or disassociate a string from a window
+  """
+
+  setproctitle("sirfidal_autotype_gui_panel")
+
+  # Button callbacks
+  def string_set_return_callback(event):
+    new_entry = string_entry.get()
+    if new_entry:
+      main_in_q.put((GUI_ACTION, (new_entry + "\r", winapp, winclass,
+					winname, auth_uid)))
+
+  def string_set_button_callback():
+    new_entry = string_entry.get()
+    if new_entry:
+      main_in_q.put((GUI_ACTION, (new_entry + "\r", winapp, winclass,
+					winname, auth_uid)))
+
+  def string_remove_button_callback():
+    main_in_q.put((GUI_ACTION, (None, winapp, winclass, winname, auth_uid)))
+
+  def cancel_button_callback():
+    root.destroy()
+
+  # Create the root window
+  root = Tk()
+
+  # Create the panel
+  root.title("SiRFIDaL autotype edit")
+
+  main_frame = Frame(root, padx = 4, pady = 4)
+  main_frame.grid(column = 0, row = 0)
+
+  wininfo_frame = LabelFrame(main_frame, text = "Window information",
+				relief = RIDGE, bd = 4, padx = 4, pady = 4)
+  wininfo_frame.grid(column = 0, row = 0, sticky = NS)
+
+  wininfo_frame_winapp_title = Label(wininfo_frame, text = "Application:")
+  wininfo_frame_winapp_title.grid(column = 0, row = 0, sticky = E)
+
+  wininfo_frame_winapp_txt = Label(wininfo_frame, text = winapp)
+  wininfo_frame_winapp_txt.grid(column = 1, row = 0, sticky = W)
+
+  wininfo_frame_winclass_title = Label(wininfo_frame, text = "Class:")
+  wininfo_frame_winclass_title.grid(column = 0, row = 1, sticky = E)
+
+  wininfo_frame_winclass_txt = Label(wininfo_frame, text = winclass)
+  wininfo_frame_winclass_txt.grid(column = 1, row = 1, sticky = W)
+
+  wininfo_frame_winname_title = Label(wininfo_frame, text = "Title:")
+  wininfo_frame_winname_title.grid(column = 0, row = 2, sticky = E)
+
+  wininfo_frame_winname_txt = Label(wininfo_frame, text = winname)
+  wininfo_frame_winname_txt.grid(column = 1, row = 2, sticky = W)
+
+  string_frame = LabelFrame(main_frame, text = "UID association",
+				relief = RIDGE, bd = 4, padx = 4, pady = 4)
+  string_frame.grid(column = 1, row = 0, sticky = NS)
+
+  string_entry = Entry(string_frame, width = 25)
+  string_entry.bind("<Return>", string_set_return_callback)
+  string_entry.grid(column = 1, row = 0, sticky = W)
+
+  string_set_button = Button(string_frame, text = "Set string to type:",
+				command = string_set_button_callback)
+  string_set_button.grid(column = 0, row = 0, sticky = NSEW)
+
+  string_remove_button = Button(string_frame, text = "Remove string",
+				command = string_remove_button_callback)
+  string_remove_button.grid(column = 0, row = 1, sticky = NSEW)
+
+  cancel_button = Button(string_frame, text = "Cancel",
+				command = cancel_button_callback)
+  cancel_button.grid(column = 1, row = 1, sticky = E)
+
+  root.mainloop()
+
+
+
+def message_popup(is_error, message):
+  """Display a message popup - either a info popup or an error popup
+  """
+
+  # Create the root window
+  root = Tk()
+
+  # Withdraw the root window
+  root.withdraw()
+
+  # Display the appropriate popup
+  if is_error:
+    messagebox.showerror("Error", message)
+  else:
+    messagebox.showinfo("", message)
+
+  # Destroy the root window
+  root.destroy()
+
+
+
 ### Main routine
 def main():
   """Main routine
@@ -157,8 +395,16 @@ def main():
 
   global definitions_file
 
+  setproctitle("sirfidal_autotype")
+
+  # SIGCHLD handler to reap defunct GUI panel processes
+  guiproc = [None]
+  def sigchld_handler(sig, fname):
+    os.wait()
+    guiproc[0] = None
+
   # Get the PID of our parent process, to detect if it changes later on
-  ppid = Process().parent()
+  ppid = psutil.Process().parent()
 
   # Parse the command line arguments if we have parameters
   argparser = argparse.ArgumentParser()
@@ -197,8 +443,10 @@ def main():
   args = argparser.parse_args()
 
   # Name of the mutex to ensure only one process runs per session
-  display = os.environ.get("DISPLAY")
-  proc_mutex = "autotype{}".format(display if display else "")
+  d = os.environ.get("DISPLAY")
+  proc_mutex = "autotype{}".format(d if d else "")
+
+  display = Xlib.display.Display()
 
   # Full path of the definitions file
   definitions_file = os.path.expanduser(args.defsfile if args.defsfile else \
@@ -209,6 +457,19 @@ def main():
   if not os.path.isfile(definitions_file) and not write_defsfile([]):
     print("Error creating the definitions file")
     return -1
+
+  # Create a queue for the keyboard event listener to send events back to the
+  # main process
+  main_in_q = Queue()
+
+  # Start the keyboard event listener if we have defined hotkeys and we haven't
+  # been asked to manipulate the definitions file or show window information
+  kbdproc = None
+  if edit_scan_hotkeys is not None and not args.showwininfo and \
+	args.writedefstring is None and not args.removedefstring:
+    kbdproc = Process(target = keyboard_event_listener, args = (main_in_q,))
+    kbdproc.start()
+    keys_pressed = set()
 
   uids_set = None
 
@@ -224,14 +485,73 @@ def main():
       if defsfile_locked:
         try:
           sc.mutex_release(definitions_file)
-        except Exception as e:
+        except:
           pass
         defsfile_locked = False
       release_defsfile_lock = False
 
+    # Only bother getting messages from other processes and checking if the GUI
+    # panel is running if we have defined hotkeys
+    if edit_scan_hotkeys is not None:
+
+      # Get messages from other processes
+      while not main_in_q.empty():
+
+        msg = main_in_q.get()
+
+        # Did we get a message from the keyboard event listener?
+        if msg[0] == KEYBOARD_EVENT_LISTENER_UPDATE:
+
+          # Read captured keys
+          key, state = msg[1]
+
+          # Update the set of keys currently depressed
+          if state:
+            keys_pressed.add(key)
+          else:
+            keys_pressed.discard(key)
+
+        # Did we get an action request from the GUI panel (only accept it if
+        # the GUI panel is running)?
+        elif msg[0] == GUI_ACTION and guiproc[0] is not None:
+
+          new_entry, winapp, winclass, winname, auth_uid = msg[1]
+
+          # Lock the definitions file
+          try:
+            if sc.mutex_acquire(definitions_file, 1) == scc.OK:
+              defsfile_locked = True
+            else:
+              defsfile_locked = False
+          except:
+            defsfile_locked = False
+
+          if defsfile_locked == False:
+            retcode = -1
+            retmsg = "Error securing exclusive access to the definitions file"
+
+          # Kill the gui panel
+          if guiproc[0] is not None:
+            guiproc[0].kill()
+
+          # Update the definitions file according to what the GUI panel
+          # instructed us to do
+          if defsfile_locked:
+            retcode, retmsg = update_defsfile(new_entry, winapp, winclass,
+						winname, auth_uid)
+            release_defsfile_lock = True
+
+          # Display an information or error popup
+          Process(target = message_popup, args = (retcode != 0, retmsg)).start()
+
+      # If the GUI panel is running, don't do anything else until it dies
+      if guiproc[0] is not None:
+        sleep(.2)
+        continue
+
     # If our parent process has changed, the session that initially
     # started us has probably terminated, in which case so should we
-    if Process().parent() != ppid:
+    if psutil.Process().parent() != ppid:
       return 0
 
     # Connect to the server
@@ -260,7 +580,7 @@ def main():
             defsfile_locked = True
           else:
             defsfile_locked = False
-        except Exception as e:
+        except:
           defsfile_locked = False
 
         if defsfile_locked == False:
@@ -272,7 +592,15 @@ def main():
         # Acquire the process mutex. Abort if we can't to avoid running
         # multiple times in the same session
         if sc.mutex_acquire(proc_mutex, 0) == scc.EXISTS:
+
           print("Error: process already running for this session")
+
+          if kbdproc is not None:
+            kbdproc.kill()
+
+          if guiproc[0] is not None:
+            guiproc[0].kill()
+
           return -1
 
       uids_set = None
@@ -314,9 +642,6 @@ def main():
 
       # Get the active window
       try:
-
-        display = Xlib.display.Display()
-
         window = display.get_input_focus().focus
         wmclass = window.get_wm_class()
         wmname = window.get_wm_name()
@@ -354,67 +679,11 @@ def main():
       # this window in the definitions file
       elif args.writedefstring is not None or args.removedefstring:
 
-        # Load the existing definitions file if one exists
-        if not load_defsfile():
-          print("Error loading the definitions file")
-          return -1
-
-        # Create the contents of the new definitions file
-        new_defsfile = []
-        defsfile_modified = False
-        entry_appended = False
-
-        # New entry in plaintext
-        newstr = (args.writedefstring if args.writedefstring is not None else \
-			"") + ("" if args.nocr else "\r")
-
-        # New entry as an encrypted base64 string
-        newstr = encrypt(newstr, auth_uid)
-
-        for d in defsfile:
-
-          # Find a matching window in the definitions file
-          if d[0] == wmclass[1] and d[1] == wmclass[0] and d[2] == wmname:
-
-            # Decrypt the encrypted string associated with the window
-            s = decrypt(d[3], auth_uid)
-
-            # If the decryption didn't succeed, try the next definition
-            if s is None:
-              new_defsfile.append(d)
-              continue
-
-            if not defsfile_modified:
-
-              if args.writedefstring is not None:
-                new_defsfile.append([wmclass[1], wmclass[0], wmname, newstr])
-
-              defsfile_modified = True
-              print("{} existing entry for this window".format(
-			"Updated" if args.writedefstring is not None else \
-			"Removed"))
-
-          else:
-              new_defsfile.append(d)
-
-        if not defsfile_modified:
-
-          if args.writedefstring is not None:
-
-            new_defsfile.append([wmclass[1], wmclass[0], wmname, newstr])
-            defsfile_modified = True
-            print("Created entry for this window")
-
-          else:
-            print("No entry found for this window")
-
-        retcode = 0
-
-        # Save the new definition file
-        if defsfile_modified and not write_defsfile(new_defsfile):
-
-          print("Error writing the definitions file")
-          retcode = -1
+        new_entry = (args.writedefstring + ("" if args.nocr else "\r")) \
+			if args.writedefstring is not None else None
+        retcode, retmsg = update_defsfile(new_entry, wmclass[1],
+						wmclass[0], wmname, auth_uid)
+        print(retmsg)
 
         # Sleep a bit before returning and unlocking the definitions file to
         # give another process waiting on a successful authentication to
@@ -423,6 +692,17 @@ def main():
         sleep(1)
 
         return retcode
+
+      # If the UID was scanned with the right combination of hotkeys depressed,
+      # the user wants to add or remove an entry in the definitions file using
+      # the GUI
+      elif edit_scan_hotkeys is not None and keys_pressed == edit_scan_hotkeys:
+
+        # Spawn a GUI panel
+        guiproc[0] = Process(target = gui_panel, args = (main_in_q, auth_uid,
+				wmclass[1], wmclass[0], wmname))
+        guiproc[0].start()
+        signal(SIGCHLD, sigchld_handler)
 
       # "Type" string if we find a definition matching the window currently in
       # focus
@@ -436,7 +716,7 @@ def main():
           else:
             defsfile_locked = False
             continue
-        except Exception as e:
+        except:
           defsfile_locked = False
           continue
 

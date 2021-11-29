@@ -427,8 +427,23 @@ Optional user utilities configuration:
         user-specific settings in ~/.sirfidal_clients_parameters.py
       - In Preferences > Startup Applications, enable SiRFIDaL autotype
       - Select the entry and click on the gears icon to run it now
-      - In a terminal, run "sirfidal_autotype.py -w <string>" to configure a
-        string to send to a particular window
+      - To tie / untie a string to type in a particular window with a particular
+        UID from the command line:
+
+        sirfidal_autotype.py -w <string> [-n]
+        sirfidal_autotype.py -r
+
+      - To tie / untie a string to type in a particular window with a particular
+        UID using the GUI panel:
+
+        - Put the target window in focus
+        - Press and maintain the modifiers defined in "edit_scan_hotkeys" in
+          sirfidal_clients_parameters.py (the modifiers may be specified by name
+          such as "Shift_L", "Shift_L", "Control_L", "Control_R", "Alt_L",
+          "Alt_R"... or by keysym, such as 0xfe03 for Alt-Gr, as reported by
+          the xev utility)
+        - Read the tag you want to associate / disassociate a string to type
+          in that particular window with to bring up the GUI panel
 
 
 

@@ -26,7 +26,8 @@ sirfidal_clients_params = {
 
   # Parameters for sirfidal_autotype.py
   "sirfidal_autotype":		{
-    "default_definitions_file":		"~/.sirfidal_autotype_definitions"
+    "default_definitions_file":		"~/.sirfidal_autotype_definitions",
+    "edit_scan_hotkeys":		("Shift_R", "Control_R")
   },
 
   # Parameters for sirfidal_beep.py
