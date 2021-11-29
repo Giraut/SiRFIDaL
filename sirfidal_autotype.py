@@ -15,6 +15,11 @@ If you don't want the program to type ENTER at the end of the string, use the
 Finally, run the program without any arguments to automatically type the strings
 in the windows defined in the configuration file.
 
+To add or remove rules for automatic typing with a simple GUI panel without
+running the program with the -w or -r argouments, press and hold the hotkeys
+defined in "edit_scan_hotkeys" in the sirfidal_clients_parameters.py file and
+scan a tag to bring up the GUI panel.
+
 This program is a SiRFIDaL client. It requires the SiRFIDaL server to interact
 with authenticated RFID / NFC transponders.
 """

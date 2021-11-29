@@ -162,7 +162,7 @@ Installation:
 
       apt-get install python3-xlib
 
-    * Additional to use sirfical_beep.py:
+    * Additional to use sirfidal_beep.py:
 
       apt-get install sox
 
@@ -173,7 +173,7 @@ Server configuration:
   As root:
 
     All the SiRFIDaL server configuration options are located in the
-    /etc/sirfical_server_parameters.py file:
+    /etc/sirfidal_server_parameters.py file:
 
     * Readers declararion:
 
