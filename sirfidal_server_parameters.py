@@ -33,7 +33,7 @@ readers = {
     "auto_rescan":	False,
     "alive_min_temp":	30.0, #C - Only Destron Fearing Bio Thermo & F/W >= 8.0
     "alive_max_temp":	43.0, #C - Only Destron Fearing Bio Thermo & F/W >= 8.0
-    "alive_uid_prefix":	"AA"  # Only Destron Fearing Bio Thermo & F/W >= 8.0
+    "alive_prefix":	"AA"  # Only Destron Fearing Bio Thermo & F/W >= 8.0
   },
 
   # HID reader
