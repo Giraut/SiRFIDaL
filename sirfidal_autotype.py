@@ -368,6 +368,12 @@ def gui_panel(main_in_q, auth_uid, winapp, winclass, winname):
 				command = cancel_button_callback)
   cancel_button.grid(column = 1, row = 1, sticky = E)
 
+  # Ensure our window is on top and try to force the focus on the string entry
+  root.attributes('-topmost', True)
+  root.focus_force()
+  string_entry.focus_force()
+  root.update()
+
   root.mainloop()
 
 
