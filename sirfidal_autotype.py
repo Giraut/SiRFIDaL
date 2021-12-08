@@ -314,6 +314,9 @@ def gui_panel(main_in_q, auth_uid, winapp, winclass, winname):
   def string_remove_button_callback():
     main_in_q.put((GUI_ACTION, (None, winapp, winclass, winname, auth_uid)))
 
+  def string_set_cancel_callback(event):
+    root.destroy()
+
   def cancel_button_callback():
     root.destroy()
 
@@ -354,6 +357,7 @@ def gui_panel(main_in_q, auth_uid, winapp, winclass, winname):
 
   string_entry = Entry(string_frame, width = 25)
   string_entry.bind("<Return>", string_set_return_callback)
+  string_entry.bind("<Escape>", string_set_cancel_callback)
   string_entry.grid(column = 1, row = 0, sticky = W)
 
   string_set_button = Button(string_frame, text = "Set string to type:",
