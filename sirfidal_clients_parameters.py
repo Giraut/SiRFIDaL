@@ -9,6 +9,9 @@
 sirfidal_clients_params = {
 
   # Parameters for sirfidal_autolockscreen.py
+  # If you run the Gnome window manager (e.g. Ubuntu), replace
+  # "cinnamon-screensaver-command" with "gnome-screensaver-command" in the
+  # commands below
   "sirfidal_autolockscreen":	{
     "screen_locker_lock_command":	"cinnamon-screensaver-command -l",
     "screen_locker_unlock_command":	"cinnamon-screensaver-command -d",

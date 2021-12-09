@@ -3,7 +3,6 @@
                                     v1.0.1
 
 
-
 This is a set of utilities to use RFID or NFC transponder UIDs as authentication
 tokens on a Linux computer - typically for login purposes.
 
@@ -462,6 +461,12 @@ Optional user utilities configuration:
           the xev utility)
         - Read the tag you want to associate / disassociate a string to type
           in that particular window with to bring up the GUI panel
+
+      Note: the SiRFIDaL autotyper needs to run on a genuine X11 display server
+            (e.g. Xorg). It doesn't run properly on Wayland as the Wayland X
+            compatibility libraries aren't fully compatible with X11. To run
+            it on a Wayland distro (e.g. Ubuntu), please disable Wayland. See
+            for instance https://linuxhint.com/enable-disable-wayland-ubuntu/
 
 
 
