@@ -1,6 +1,6 @@
                 SiRFIDaL - Simple RFID authentication for Linux
                 -----------------------------------------------
-                                    v1.0.1
+                                    v1.1.0
 
 
 This is a set of utilities to use RFID or NFC transponder UIDs as authentication
@@ -61,13 +61,13 @@ The utilities included are:
                                      be run as root, as the SiRFIDaL server will
                                      not expose actual UIDs to non-root users.
 
-- sirfidal_auto_send_enter_at_login  Utility that uses sirfidal_getuids to
-                                     automatically type ENTER in a console or
-                                     graphical login screen when a RFID / NFC
-                                     transponder is read by the SiRFIDaL server,
-                                     to avoid having to type an empty password
-                                     when using pam_unix and sirfidal_pam
-                                     together in the same PAM configuration.
+- sirfidal_auto_send_enter_at_login  Utility that automatically types ENTER in
+                                     a console or graphical login screen when a
+                                     RFID / NFC transponder is read by the
+                                     SiRFIDaL server, to avoid having to type
+                                     an empty password when using pam_unix and
+                                     sirfidal_pam together in the same PAM
+                                     configuration.
 
 
 
@@ -159,10 +159,6 @@ Installation:
       apt-get install python3-xdo
           -or-
       python3 -m pip install pynput
-
-    * Additional to use sirfidal_auto_send_enter_at_login.py:
-
-      apt-get install python3-xlib
 
     * Additional to use sirfidal_beep.py:
 
