@@ -375,6 +375,8 @@ Optional systemd services:
       systemctl enable sirfidal_auto_send_enter_at_login
       systemctl start sirfidal_auto_send_enter_at_login
 
+      Note: Doesn't work with Wayland - see below.
+
 
 
 PAM configuration:
@@ -459,11 +461,7 @@ Optional user utilities configuration:
         - Read the tag you want to associate / disassociate a string to type
           in that particular window with to bring up the GUI panel
 
-      Note: the SiRFIDaL autotyper needs to run on a genuine X11 display server
-            (e.g. Xorg). It doesn't run properly on Wayland as the Wayland X
-            compatibility libraries aren't fully compatible with X11. To run
-            it on a Wayland distro (e.g. Ubuntu), please disable Wayland. See
-            for instance https://linuxhint.com/enable-disable-wayland-ubuntu/
+      Note: Doesn't work with Wayland - see below.
 
 
 
@@ -522,6 +520,25 @@ Note regarding persistence in Android devices:
   UIDs read by the Tasker script time out on their own. When persistent mode is
   disabled, the Android device still works as an external NFC reader, but
   degrades to the equivalent of a keyboard wedge or non-repeating serial reader.
+
+
+
+Incompatibility with Wayland:
+
+  The Wayland X compatibility libraries aren't fully compatible with X11, and
+  Wayland has no concept of window in focus as X understands it, nor does it
+  supports synthetic keyboard events targeted at a single window like X does.
+  Those features are needed by the SiRFIDaL autotyper to function properly.
+
+  In addition, the Wayland input stack doesn't seem to accept uinput events
+  either, which breaks sirfidal_auto_send_enter_at_login.
+
+  Therefore, in distributions that feature Wayland as the default display server
+  such as Debian or Ubuntu, in order to use those SiRFIDaL utility, Wayland
+  must be disabled and replaced by the traditional Xorg display server.
+
+  See for instance https://wiki.debian.org/GDM#Disabling_Wayland
+  or https://linuxhint.com/enable-disable-wayland-ubuntu/
 
 
 
