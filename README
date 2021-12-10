@@ -1,6 +1,6 @@
                 SiRFIDaL - Simple RFID authentication for Linux
                 -----------------------------------------------
-                                    v1.1.1
+                                    v1.1.2
 
 
 This is a set of utilities to use RFID or NFC transponder UIDs as authentication
@@ -77,23 +77,36 @@ Installation / configuration instructions for the busy man
 The following are instructions to install the utilities on Linux Mint, which is
 based on Ubuntu, and running systemd and the Cinnamon environment.
 
-If your Linux system isn't Linux Mint, please modify the *.py Python scripts,
-*.service systemd service files and sirfidal_pam.config PAM configuration files
-accordingly. See the comments in the Python scrips for details and available
-configurable parameters.
+SiRFIDaL was also tested and works on Debian and Ubuntu with minor configuration
+changes (see below). It also works well on Fedora and CentOS, but the PAM
+configuration for those distribution is completely different.
+
+If your Linux system isn't Linux Mint, please modify the configuration files
+and/or system as needed.
 
 
 
-Installation:
+Installation from the pre-build .deb package
+
+  As root:
+
+    - See https://github.com/Giraut/ppa to add the PPA repository to your
+      APT sources
+
+    apt install sirfidal
+
+
+
+Manual installation:
 
   As root:
 
     * Common:
 
-      apt-get install python3
-      apt-get install python3-psutil
-      apt-get install python3-filelock
-      apt-get install python3-setproctitle
+      apt install python3
+      apt install python3-psutil
+      apt install python3-filelock
+      apt install python3-setproctitle
 
       cp sirfidal_server.py /usr/local/bin
 
@@ -121,7 +134,7 @@ Installation:
 
     * Additional to use PC/SC readers:
 
-      apt-get install pcscd pcsc-tools python3-pyscard
+      apt install pcscd pcsc-tools python3-pyscard
 
       - Configure PC/SC for your readers. If pcsc_scan works, SiRFIDaL will
         work also. See https://pcsclite.apdu.fr/
@@ -129,11 +142,11 @@ Installation:
     * Additional to use serial readers, Halo Scanners, Proxmark3, Chameleon or
       uFR devices in serial mode:
 
-      apt-get install python3-serial
+      apt install python3-serial
 
     * Additional to use NFC-enabled Android devices as readers:
 
-      apt-get install adb
+      apt install adb
 
       - Configure your Android device following the instructions below
 
@@ -144,7 +157,7 @@ Installation:
 
     * Additional to use HID readers:
 
-      apt-get install python3-evdev
+      apt install python3-evdev
 
     * Additional to use uFR readers:
 
@@ -154,16 +167,16 @@ Installation:
 
     * Additional to use sirfidal_autotype.py:
 
-      apt-get install python3-tk
-      apt-get install python3-xlib
-      apt-get install python3-cryptography
-      apt-get install python3-xdo
+      apt install python3-tk
+      apt install python3-xlib
+      apt install python3-cryptography
+      apt install python3-xdo
           -or-
       python3 -m pip install pynput
 
     * Additional to use sirfidal_beep.py:
 
-      apt-get install sox
+      apt install sox
 
 
 
@@ -348,8 +361,7 @@ Server configuration:
 
     * Enable and start the SiRFIDaL server's systemd services:
 
-      systemctl enable sirfidal_server
-      systemctl start sirfidal_server
+      systemctl enable --now sirfidal_server
 
 
 
@@ -362,18 +374,15 @@ Optional systemd services:
       - Change the system-wide configuration settings related to sirfidal_beep
         in /etc/sirfidal_clients_parameters.py if needed
 
-      systemctl enable sirfidal_beep
-      systemctl start sirfidal_beep
+      systemctl enable --now sirfidal_beep
 
     * Enabling and starting the SiRFIDaL keyboard wedge simulation service:
 
-      systemctl enable sirfidal_keyboard_wedge
-      systemctl start sirfidal_keyboard_wedge
+      systemctl enable --now sirfidal_keyboard_wedge
 
     * Enabling and starting the SiRFIDaL "auto send ENTER at login" service:
 
-      systemctl enable sirfidal_auto_send_enter_at_login
-      systemctl start sirfidal_auto_send_enter_at_login
+      systemctl enable --now sirfidal_auto_send_enter_at_login
 
       Note: Doesn't work with Wayland - see below.
 
