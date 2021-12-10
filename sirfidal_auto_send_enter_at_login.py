@@ -52,6 +52,8 @@ def get_session_class(vc):
   """Use loginctl to iterate over the list of currently-running sessions and
   return the class of any session running on the virtual console vc, "" if no
   session is found running on that virtual console, or None in case of error
+  If several sessions are found running on the same console (normally
+  impossible), "greeter" class supersedes other classes.
   """
 
   if vc is None:
@@ -74,8 +76,9 @@ def get_session_class(vc):
     if m:
       sessionids.append(m[0][0])
 
-  # For each session, get the associated virtual console and class. If the
-  # virtual console matches, return the class
+  session_class = ""
+
+  # For each session, get the associated virtual console and class
   for sessionid in sessionids:
 
     # Get the session information
@@ -90,24 +93,35 @@ def get_session_class(vc):
       pass
 
     # Extract the virtual console and class. Skip if the virtual console
-    # doesn't match. Return the class if it does
-    session_vtnr = None
-    session_class = None
+    # doesn't match. Remember the class if it does, and return immediately if
+    # the class is "greeter".
+    tty = None
+    sc = None
+
     for l in loginctl_stdout.split("\n"):
+
       m = re.findall("^(VTNr|Class)=([\S+]+)$", l)
       if m:
+
         if m[0][0] == "VTNr":
-          session_vtnr = "tty{}".format(m[0][1])
+          tty = "tty{}".format(m[0][1])
         else:
-          session_class = m[0][1]
-        if session_vtnr is not None:
-          if session_vtnr != vc:
+          sc = m[0][1]
+
+        if tty is not None:
+
+          if tty != vc:
             break
-          elif session_class is not None:
-            return session_class
+
+          elif sc is not None:
+            if sc == "greeter":
+              return sc
+            else:
+              session_class = sc
+              break
 
   # We didn't find a session with a matching virtual console number
-  return ""
+  return session_class
 
 
 
