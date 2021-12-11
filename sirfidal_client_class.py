@@ -1,4 +1,3 @@
-#!/usr/bin/python3
 """SiRFIDaL client class
 """
 
@@ -17,6 +16,10 @@ import os
 import re
 import pwd
 import socket
+
+# Python2 compatibility
+if "SO_PASSCRED" not in dir(socket):
+  socket.SO_PASSCRED = 16	# From /usr/include/asm-generic/socket.h
 
 
 
@@ -131,7 +134,7 @@ class sirfidal_client:
         if c == "\n":
           return reply
 
-        elif c.isprintable() and len(reply)<256:
+        elif " " <= c <= "~" and len(reply)<256:
           reply += c
 
 
@@ -155,7 +158,7 @@ class sirfidal_client:
       user = pwd.getpwuid(os.getuid()).pw_name
 
     # Check that the username is valid
-    if not (user and user.isprintable()):
+    if not (user and all([" " <= c <= "~" for c in user])):
       raise ValueError("invalid username")
 
     # Send the WAITAUTH command to the server and get the reply
@@ -188,7 +191,7 @@ class sirfidal_client:
       user = pwd.getpwuid(os.getuid()).pw_name
 
     # Check that the username is valid
-    if not (user and user.isprintable()):
+    if not (user and all([" " <= c <= "~" for c in user])):
       raise ValueError("invalid username")
 
     # Send the command to the server and get the reply
@@ -319,7 +322,7 @@ class sirfidal_client:
       raise ValueError("invalid wait")
 
     # Check that the mutex name is valid
-    if not (name and name.isprintable()):
+    if not (name and all([" " <= c <= "~" for c in name])):
       raise ValueError("invalid mutex name")
 
     # Send the MUTEXACQ command to the server and get the reply
@@ -342,7 +345,7 @@ class sirfidal_client:
     """
 
     # Check that the mutex name is valid
-    if not (name and name.isprintable()):
+    if not (name and all([" " <= c <= "~" for c in name])):
       raise ValueError("invalid mutex name")
 
     # Send the MUTEXREL command to the server and get the reply
