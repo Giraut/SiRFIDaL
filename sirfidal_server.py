@@ -123,12 +123,13 @@ Server replies: OK
 The server will reply to any other request it doesn't understand with:
 		UNKNOWN
 
-After a successful WAITAUTH request, if the requesting process owner is the
-the same as the user they request an authentication for (i.e. the user
-authenticates themselves), the server returns the authenticating UID in
-plaintext after the AUTHOK reply, to use for whatever purpose they see fit
-(encryption usually). If the requesting process owner requests authentication
-for another user (e.g. su), the UID isn't sent after AUTHOK.
+After a successful WAITAUTH request, if the requesting process owner is root or
+the same as the user it requests an authentication for (i.e. the user
+authenticates themselves or root authenticate a user), the server returns the
+authenticating UID(s) in plaintext after the AUTHOK reply, to use for whatever
+purpose they see fit (encryption for example). If the requesting process owner
+requests authentication for another user and isn't root (e.g. su), the UID(s)
+aren't sent after AUTHOK.
 
 After receiving a reply to a WAITAUTH, ADDUSER or DELUSER request, the client
 is expected to close the socket within a certain grace period. The client may
@@ -236,6 +237,7 @@ class client:
 
   def __init__(self):
 
+    self.uid = None
     self.pw_name = None
     self.main_out_p = None
     self.request = None
@@ -1917,7 +1919,7 @@ def client_handler(pid, uid, gid, pw_name, is_remote_user,
   force_stop_tstamp = None
 
   # Inform the main process that we have a new client
-  main_in_q.put((NEW_CLIENT, (pid, pw_name, main_out_p)))
+  main_in_q.put((NEW_CLIENT, (pid, uid, pw_name, main_out_p)))
   new_client_ack = False
 
   while True:
@@ -2529,8 +2531,9 @@ def main():
         # Create this client in the list of active clients and assign it the
         # void request to time out the client if it stays idle too long
         active_clients[msg[1][0]] = client()
-        active_clients[msg[1][0]].pw_name = msg[1][1]
-        active_clients[msg[1][0]].main_out_p = msg[1][2]
+        active_clients[msg[1][0]].uid = msg[1][1]
+        active_clients[msg[1][0]].pw_name = msg[1][2]
+        active_clients[msg[1][0]].main_out_p = msg[1][3]
         active_clients[msg[1][0]].request = VOID_REQUEST
         active_clients[msg[1][0]].expires = now + \
 			client_force_close_socket_timeout
@@ -2806,15 +2809,16 @@ def main():
       # If an authentication request has timed out or the authentication is
       # successful, notify the client handler and replace the request with
       # a fresh void request and associated timeout. If the requesting process
-      # owner is the same as the user they request an authentication for, they
-      # have the right to know their own UID, so send it along.
+      # owner is root or the same as the user they request an authentication
+      # for, they have the right to know the authenticating UID(s), so
+      # send them along.
       if active_clients[cpid].request == WAITAUTH_REQUEST and \
 		(auth or active_clients[cpid].expires == None or \
 		now >= active_clients[cpid].expires):
         active_clients[cpid].main_out_p.send((AUTH_RESULT,
 		(AUTH_OK if auth else AUTH_NOK, auth_uids if auth and \
-		active_clients[cpid].name == active_clients[cpid].pw_name else \
-		None)))
+		(active_clients[cpid].name == active_clients[cpid].pw_name or \
+		active_clients[cpid].uid == 0) else None)))
         active_clients[cpid].request = VOID_REQUEST
         active_clients[cpid].expires = now + client_force_close_socket_timeout
 
