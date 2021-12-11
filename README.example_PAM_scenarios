@@ -15,6 +15,13 @@ what concerns us here.
 Some familiarity with how the PAM system works is helpful to understand what
 goes on in the configuration scenarios below.
 
+NB: All the examples below assume you have pam_python installed
+    (http://pam-python.sourceforge.net/). On Debian-based distributions,
+    the corresponding package is libpam-python. If your distribution doesn't
+    provide pam_python, replace "pam_python.so" by "pam_exec.so quiet", as
+    sirfidal_pam.py is compatible with both. However, note that sirfidal_pam.py
+    won't be able to set authtok with pam_exec.so.
+
 
 
 * Scenario #1: 1FA: either user's password or user's RFID transponder required
@@ -46,9 +53,9 @@ Default: yes
 Priority: 192
 Auth-Type: Primary
 Auth:
-  [success=end default=ignore]  pam_exec.so quiet /usr/local/bin/sirfidal_pam.py
+  [success=end default=ignore]  pam_python.so /usr/local/bin/sirfidal_pam.py
 Auth-Initial:
-  [success=end default=ignore]  pam_exec.so quiet /usr/local/bin/sirfidal_pam.py
+  [success=end default=ignore]  pam_python.so /usr/local/bin/sirfidal_pam.py
 
 
 
@@ -81,9 +88,9 @@ Default: yes
 Priority: 192
 Auth-Type: Primary
 Auth:
-  [success=end default=ignore]  pam_exec.so quiet /usr/local/bin/sirfidal_pam.py
+  [success=end default=ignore]  pam_python.so /usr/local/bin/sirfidal_pam.py
 Auth-Initial:
-  [success=end default=ignore]  pam_exec.so quiet /usr/local/bin/sirfidal_pam.py
+  [success=end default=ignore]  pam_python.so /usr/local/bin/sirfidal_pam.py
 
 
 
@@ -118,9 +125,9 @@ Default: yes
 Priority: 192
 Auth-Type: Primary
 Auth:
-  [success=end default=ignore]  pam_exec.so quiet /usr/local/bin/sirfidal_pam.py
+  [success=end default=ignore]  pam_python.so /usr/local/bin/sirfidal_pam.py
 Auth-Initial:
-  [success=end default=ignore]  pam_exec.so quiet /usr/local/bin/sirfidal_pam.py
+  [success=end default=ignore]  pam_python.so /usr/local/bin/sirfidal_pam.py
 
   - /usr/share/pam-config/sirfidal_pam.config_2
 
@@ -129,9 +136,9 @@ Default: yes
 Priority: 128
 Auth-Type: Primary
 Auth:
-  [success=end default=ignore]  pam_exec.so quiet /usr/local/bin/sirfidal_pam.py -u master -w 0
+  [success=end default=ignore]  pam_python.so /usr/local/bin/sirfidal_pam.py user=master wait=0
 Auth-Initial:
-  [success=end default=ignore]  pam_exec.so quiet /usr/local/bin/sirfidal_pam.py -u master -w 0
+  [success=end default=ignore]  pam_python.so /usr/local/bin/sirfidal_pam.py user=master wait=0
 
 * Notes:
 
@@ -177,9 +184,9 @@ Default: yes
 Priority: 192
 Auth-Type: Primary
 Auth:
-  [success=ok default=1]  pam_exec.so quiet /usr/local/bin/sirfidal_pam.py -u supervisor -w 0
+  [success=ok default=1]  pam_python.so /usr/local/bin/sirfidal_pam.py user=supervisor wait=0
 Auth-Initial:
-  [success=ok default=1]  pam_exec.so quiet /usr/local/bin/sirfidal_pam.py -u supervisor -w 0
+  [success=ok default=1]  pam_python.so /usr/local/bin/sirfidal_pam.py user=supervisor wait=0
 
   - /usr/share/pam-config/sirfidal_pam.config_user
 
@@ -188,9 +195,9 @@ Default: yes
 Priority: 128
 Auth-Type: Primary
 Auth:
-  [success=end default=ignore]  pam_exec.so quiet /usr/local/bin/sirfidal_pam.py -w 0
+  [success=end default=ignore]  pam_python.so /usr/local/bin/sirfidal_pam.py wait=0
 Auth-Initial:
-  [success=end default=ignore]  pam_exec.so quiet /usr/local/bin/sirfidal_pam.py -w 0
+  [success=end default=ignore]  pam_python.so /usr/local/bin/sirfidal_pam.py wait=0
 
 * Notes:
 

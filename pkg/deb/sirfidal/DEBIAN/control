@@ -4,4 +4,4 @@ Maintainer: Rosco <roskis@runbox.com>
 Description: SiRFIDal - Simple RFID authentication for Linux
 Homepage: https://github.com/Giraut/SiRFIDaL/
 Architecture: all
-Depends: python3 (>=3.5), python3-psutil, python3-filelock, python3-setproctitle, python3-pyscard, python3-serial, python3-evdev, python3-cryptography, python3-xdo, python3-xlib, python3-tk, pcscd, pcsc-tools, adb, sox
+Depends: python3 (>=3.5), python3-psutil, python3-filelock, python3-setproctitle, libpam-python, python3-pyscard, python3-serial, python3-evdev, python3-cryptography, python3-xdo, python3-xlib, python3-tk, pcscd, pcsc-tools, adb, sox
