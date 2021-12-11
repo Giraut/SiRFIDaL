@@ -39,10 +39,10 @@ from Xlib import X, XK
 from Xlib.ext import record
 from Xlib.protocol import rq
 from tkinter import messagebox
-from signal import signal, SIGCHLD
 from setproctitle import setproctitle
 from base64 import b64encode, b64decode
 from multiprocessing import Process, Queue
+from signal import signal, SIGCHLD, SIGTERM, SIGHUP
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 import sirfidal_client_class as scc
 
@@ -69,6 +69,10 @@ edit_scan_hotkeys = set(scc.edit_scan_hotkeys) \
 ### Defines
 KEYBOARD_EVENT_LISTENER_UPDATE = 0
 GUI_ACTION = 1
+
+PROC_KBD = 0
+PROC_GUI_PANEL = 1
+PROC_GUI_POPUP = 2
 
 
 
@@ -382,9 +386,11 @@ def gui_panel(main_in_q, auth_uid, winapp, winclass, winname):
 
 
 
-def message_popup(is_error, message):
+def gui_popup(is_error, message):
   """Display a message popup - either a info popup or an error popup
   """
+
+  setproctitle("sirfidal_autotype_gui_popup")
 
   # Create the root window
   root = Tk()
@@ -412,11 +418,35 @@ def main():
 
   setproctitle("sirfidal_autotype")
 
-  # SIGCHLD handler to reap defunct GUI panel processes
-  guiproc = [None]
+  run = [True]
+  retcode = [0]	# Default return code: no error
+
+  mainprocpid = [os.getpid()]
+  procs = [None, None, None]
+
+  # Signal handler to catch any signal that should cause us to die: if we're in
+  # the main process, kill child processes. If we're in a child process, stop
+  def die_sig_handler(sig, fname):
+    pid = os.getpid()
+    if pid == mainprocpid[0]:
+      for proc in procs:
+        if proc is not None:
+          proc.kill()
+      retcode[0] = -1
+      run[0] = False
+    else:
+      sys.exit(-1)
+
+  # SIGCHLD handler to reap defunct children processes. Stop the main process
+  # if the keyboard event listener dies, as it's not supposed to stop
   def sigchld_handler(sig, fname):
-    os.wait()
-    guiproc[0] = None
+    pid = os.wait()[0]
+    for i, proc in enumerate(procs):
+      if proc is not None and pid == proc.pid:
+        procs[i] = None
+        if i == PROC_KBD:
+          retcode[0] = -1
+          run[0] = False
 
   # Get the PID of our parent process, to detect if it changes later on
   ppid = psutil.Process().parent()
@@ -477,13 +507,18 @@ def main():
   # main process
   main_in_q = Queue()
 
+  # Install our signal handlers
+  signal(SIGCHLD, sigchld_handler)
+  signal(SIGTERM, die_sig_handler)
+  signal(SIGHUP, die_sig_handler)
+
   # Start the keyboard event listener if we have defined hotkeys and we haven't
   # been asked to manipulate the definitions file or show window information
-  kbdproc = None
   if edit_scan_hotkeys is not None and not args.showwininfo and \
 	args.writedefstring is None and not args.removedefstring:
-    kbdproc = Process(target = keyboard_event_listener, args = (main_in_q,))
-    kbdproc.start()
+    procs[PROC_KBD] = Process(target = keyboard_event_listener,
+				args = (main_in_q,))
+    procs[PROC_KBD].start()
     keys_pressed = set()
 
   uids_set = None
@@ -491,9 +526,10 @@ def main():
   release_defsfile_lock = False
 
   sc = None
+  pause_before_connect = 0
 
   # Main loop
-  while True:
+  while run[0]:
 
     # Release the definition file lock if needed
     if release_defsfile_lock:
@@ -528,57 +564,66 @@ def main():
 
         # Did we get an action request from the GUI panel (only accept it if
         # the GUI panel is running)?
-        elif msg[0] == GUI_ACTION and guiproc[0] is not None:
+        elif msg[0] == GUI_ACTION and procs[PROC_GUI_PANEL] is not None:
 
           new_entry, winapp, winclass, winname, auth_uid = msg[1]
 
           # Lock the definitions file
           try:
-            if sc.mutex_acquire(definitions_file, 1) == scc.OK:
-              defsfile_locked = True
-            else:
-              defsfile_locked = False
+            defsfile_locked = sc.mutex_acquire(definitions_file, 1) == scc.OK
           except:
             defsfile_locked = False
 
           if defsfile_locked == False:
-            retcode = -1
+            retcode[0] = -1
             retmsg = "Error securing exclusive access to the definitions file"
 
           # Kill the gui panel
-          if guiproc[0] is not None:
-            guiproc[0].kill()
+          if procs[PROC_GUI_PANEL] is not None:
+            procs[PROC_GUI_PANEL].kill()
 
           # Update the definitions file according to what the GUI panel
           # instructed us to do
           if defsfile_locked:
-            retcode, retmsg = update_defsfile(new_entry, winapp, winclass,
+            retcode[0], retmsg = update_defsfile(new_entry, winapp, winclass,
 						winname, auth_uid)
             release_defsfile_lock = True
 
           # Display an information or error popup
-          Process(target = message_popup, args = (retcode != 0, retmsg)).start()
+          procs[PROC_GUI_POPUP] = Process(target = gui_popup,
+					args = (retcode[0] != 0, retmsg))
+          procs[PROC_GUI_POPUP].start()
 
       # If the GUI panel is running, don't do anything else until it dies
-      if guiproc[0] is not None:
+      if procs[PROC_GUI_PANEL] is not None:
         sleep(.2)
         continue
 
     # If our parent process has changed, the session that initially
     # started us has probably terminated, in which case so should we
     if psutil.Process().parent() != ppid:
-      return 0
+      retcode[0] = 0
+      run[0] = False
+      continue
 
     # Connect to the server
     if sc is None:
+
+      # Sleep a bit before reconnecting if required
+      sleep(pause_before_connect)
+      pause_before_connect = 0
+
+      # Try to connect
       try:
         sc = scc.sirfidal_client()
 
       except KeyboardInterrupt:
-        return 0
+        retcode[0] = 0
+        run[0] = False
+        continue
 
       except:
-        sleep(1)	# Wait a bit before reconnecting in case of error
+        pause_before_connect = 1	# Wait a bit before reconnecting
         sc = None
         continue
 
@@ -591,32 +636,25 @@ def main():
         # instance of the program can't trigger an autotype while we're busy
         # modifying the definitions file or showing window information
         try:
-          if sc.mutex_acquire(definitions_file, 1) == scc.OK:
-            defsfile_locked = True
-          else:
-            defsfile_locked = False
+          defsfile_locked = sc.mutex_acquire(definitions_file, 1) == scc.OK
         except:
           defsfile_locked = False
 
         if defsfile_locked == False:
           print("Error securing exclusive access to the definitions file")
-          return -1
+          retcode[0] = -1
+          run[0] = False
+          continue
 
       else:
 
         # Acquire the process mutex. Abort if we can't to avoid running
         # multiple times in the same session
         if sc.mutex_acquire(proc_mutex, 0) == scc.EXISTS:
-
           print("Error: process already running for this session")
-
-          if kbdproc is not None:
-            kbdproc.kill()
-
-          if guiproc[0] is not None:
-            guiproc[0].kill()
-
-          return -1
+          retcode[0] = -1
+          run[0] = False
+          continue
 
       uids_set = None
 
@@ -625,7 +663,9 @@ def main():
       _, uids = sc.waitauth(wait = 0 if uids_set is None else 1)
 
     except KeyboardInterrupt:
-      return 0
+      retcode[0] = 0
+      run[0] = False
+      continue
 
     except:
       try:
@@ -634,7 +674,7 @@ def main():
         pass
       sc = None
       release_defsfile_lock = True
-      sleep(1)	# Wait a bit before reconnecting in case of error
+      pause_before_connect = 1	# Wait a bit before reconnecting
       continue
 
     # If we got the first set of UIDs, prompt the user and initialize
@@ -696,7 +736,7 @@ def main():
 
         new_entry = (args.writedefstring + ("" if args.nocr else "\r")) \
 			if args.writedefstring is not None else None
-        retcode, retmsg = update_defsfile(new_entry, wmclass[1],
+        retcode[0], retmsg = update_defsfile(new_entry, wmclass[1],
 						wmclass[0], wmname, auth_uid)
         print(retmsg)
 
@@ -706,7 +746,7 @@ def main():
         # immediately autotype the new string for this window
         sleep(1)
 
-        return retcode
+        return retcode[0]
 
       # If the UID was scanned with the right combination of hotkeys depressed,
       # the user wants to add or remove an entry in the definitions file using
@@ -714,10 +754,10 @@ def main():
       elif edit_scan_hotkeys is not None and keys_pressed == edit_scan_hotkeys:
 
         # Spawn a GUI panel
-        guiproc[0] = Process(target = gui_panel, args = (main_in_q, auth_uid,
-				wmclass[1], wmclass[0], wmname))
-        guiproc[0].start()
-        signal(SIGCHLD, sigchld_handler)
+        procs[PROC_GUI_PANEL] = Process(target = gui_panel,
+					args = (main_in_q, auth_uid,
+						wmclass[1], wmclass[0], wmname))
+        procs[PROC_GUI_PANEL].start()
 
       # "Type" string if we find a definition matching the window currently in
       # focus
@@ -778,6 +818,13 @@ def main():
     # a tight loop as long as the same UIDs are active
     if uids_set and uids_set == uids_set_prev:
       sleep(.2)
+
+  # Kill any running child process
+  for proc in procs:
+    if proc is not None:
+      proc.kill()
+
+  return retcode[0]
 
 
 
