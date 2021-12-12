@@ -1,6 +1,6 @@
                 SiRFIDaL - Simple RFID authentication for Linux
                 -----------------------------------------------
-                                    v1.2.0
+                                    v1.3.0
 
 
 This is a set of utilities to use RFID or NFC transponder UIDs as authentication
@@ -48,7 +48,8 @@ The utilities included are:
                                      strings in predefined X application
                                      windows (passwords for example) upon
                                      authenticating with a RFID or NFC
-                                     transponder.
+                                     transponder. Can also copy a UID into the
+                                     system clipboard.
 
 - sirfidal_keyboard_wedge            Program to emulate a RFID / NFC keyboard
                                      wedge reader, by typing out the UIDs read
@@ -168,6 +169,7 @@ Manual installation:
 
     * Additional to use sirfidal_autotype.py:
 
+      apt install pyperclip
       apt install python3-tk
       apt install python3-xlib
       apt install python3-cryptography
@@ -454,13 +456,14 @@ Optional user utilities configuration:
       - In Preferences > Startup Applications, enable SiRFIDaL autotype
       - Select the entry and click on the gears icon to run it now
       - To tie / untie a string to type in a particular window with a particular
-        UID from the command line:
+        UID, or copy that UID into the system clipboard, from the command line:
 
         sirfidal_autotype.py -w <string> [-n]
         sirfidal_autotype.py -r
+        sirfidal_autotype.py -c
 
       - To tie / untie a string to type in a particular window with a particular
-        UID using the GUI panel:
+        UID, or copy that UID into the system clipboard, using the GUI panel:
 
         - Put the target window in focus
         - Press and maintain the modifiers defined in "edit_scan_hotkeys" in
@@ -468,8 +471,8 @@ Optional user utilities configuration:
           such as "Shift_L", "Shift_L", "Control_L", "Control_R", "Alt_L",
           "Alt_R"... or by keysym, such as 0xfe03 for Alt-Gr, as reported by
           the xev utility)
-        - Read the tag you want to associate / disassociate a string to type
-          in that particular window with to bring up the GUI panel
+        - Read the tag you want to associate / disassociate or copy into the
+          clipboard to bring up the GUI panel
 
       Note: Doesn't work with Wayland - see below.
 

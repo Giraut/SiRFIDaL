@@ -32,6 +32,7 @@ import json
 import psutil
 import secrets
 import argparse
+import pyperclip
 import Xlib.display
 from tkinter import *
 from time import sleep
@@ -304,25 +305,52 @@ def gui_panel(main_in_q, auth_uid, winapp, winclass, winname):
 
   # Button callbacks
   def string_set_return_callback(event):
+    nonlocal string_entry, main_in_q, winapp, winclass, winname, auth_uid
     new_entry = string_entry.get()
     if new_entry:
       main_in_q.put((GUI_ACTION, (new_entry + "\r", winapp, winclass,
-					winname, auth_uid)))
+					winname, auth_uid, None, None)))
 
   def string_set_button_callback():
+    nonlocal string_entry, main_in_q, winapp, winclass, winname, auth_uid
     new_entry = string_entry.get()
     if new_entry:
       main_in_q.put((GUI_ACTION, (new_entry + "\r", winapp, winclass,
-					winname, auth_uid)))
+					winname, auth_uid, None, None)))
+
+  def uid_showhide_button_callback():
+    nonlocal uid_hidden, uid_text, auth_uid
+    uid_text.delete("1.0", END)
+    if uid_hidden:
+      uid_text.insert(END, auth_uid)
+    else:
+      uid_text.insert(END, "*" * len(auth_uid))
+    uid_hidden = not uid_hidden
+
+  def uid_copy_button_callback():
+    nonlocal main_in_q, auth_uid
+    try:
+      pyperclip.copy(auth_uid)
+      main_in_q.put((GUI_ACTION, (None, None, None, None, None,
+					False, "UID copied!")))
+    except:
+      main_in_q.put((GUI_ACTION, (None, None, None, None, None,
+					True, "Error copying the UID!")))
 
   def string_remove_button_callback():
-    main_in_q.put((GUI_ACTION, (None, winapp, winclass, winname, auth_uid)))
+    nonlocal main_in_q, winapp, winclass, winname, auth_uid
+    main_in_q.put((GUI_ACTION, (None, winapp, winclass,
+				winname, auth_uid, None, None)))
 
   def string_set_cancel_callback(event):
+    nonlocal root
     root.destroy()
 
   def cancel_button_callback():
+    nonlocal root
     root.destroy()
+
+  uid_hidden = True
 
   # Create the root window
   root = Tk()
@@ -330,12 +358,14 @@ def gui_panel(main_in_q, auth_uid, winapp, winclass, winname):
   # Create the panel
   root.title("SiRFIDaL autotype edit")
 
+  # Main frame
   main_frame = Frame(root, padx = 4, pady = 4)
-  main_frame.grid(column = 0, row = 0)
+  main_frame.grid(column = 0, row = 0, sticky = NSEW)
 
+  # Window information frame
   wininfo_frame = LabelFrame(main_frame, text = "Window information",
 				relief = RIDGE, bd = 4, padx = 4, pady = 4)
-  wininfo_frame.grid(column = 0, row = 0, sticky = NS)
+  wininfo_frame.grid(column = 0, row = 0, sticky = NSEW)
 
   wininfo_frame_winapp_title = Label(wininfo_frame, text = "Application:")
   wininfo_frame_winapp_title.grid(column = 0, row = 0, sticky = E)
@@ -355,26 +385,64 @@ def gui_panel(main_in_q, auth_uid, winapp, winclass, winname):
   wininfo_frame_winname_txt = Label(wininfo_frame, text = winname)
   wininfo_frame_winname_txt.grid(column = 1, row = 2, sticky = W)
 
+  # UID frame
+  uid_frame = LabelFrame(main_frame, text = "UID",
+				relief = RIDGE, bd = 4, padx = 4, pady = 4)
+  uid_frame.grid(column = 0, row = 1, sticky = NSEW)
+
+  uid_text = Text(uid_frame, height = 1, width = 16)
+  uid_text.insert(END, "*" * len(auth_uid))
+  uid_text.grid(column = 0, row = 0, columnspan = 2, sticky = EW)
+
+  uid_showhide_button = Button(uid_frame, text = "Show / hide",
+				command = uid_showhide_button_callback)
+  uid_showhide_button.grid(column = 0, row = 1, sticky = W)
+
+  uid_copy_button = Button(uid_frame, text = "Copy to clipboard",
+				command = uid_copy_button_callback)
+  uid_copy_button.grid(column = 1, row = 1, sticky = E)
+
+  # UID association (string) frame
   string_frame = LabelFrame(main_frame, text = "UID association",
 				relief = RIDGE, bd = 4, padx = 4, pady = 4)
-  string_frame.grid(column = 1, row = 0, sticky = NS)
+  string_frame.grid(column = 0, row = 2, sticky = NSEW)
 
   string_entry = Entry(string_frame, width = 25)
   string_entry.bind("<Return>", string_set_return_callback)
   string_entry.bind("<Escape>", string_set_cancel_callback)
-  string_entry.grid(column = 1, row = 0, sticky = W)
+  string_entry.grid(column = 1, row = 0, columnspan = 2, sticky = EW)
 
   string_set_button = Button(string_frame, text = "Set string to type:",
 				command = string_set_button_callback)
-  string_set_button.grid(column = 0, row = 0, sticky = NSEW)
+  string_set_button.grid(column = 0, row = 0, sticky = EW)
 
   string_remove_button = Button(string_frame, text = "Remove string",
 				command = string_remove_button_callback)
-  string_remove_button.grid(column = 0, row = 1, sticky = NSEW)
+  string_remove_button.grid(column = 0, row = 1, sticky = EW)
 
   cancel_button = Button(string_frame, text = "Cancel",
 				command = cancel_button_callback)
-  cancel_button.grid(column = 1, row = 1, sticky = E)
+  cancel_button.grid(column = 2, row = 1, sticky = E)
+
+  # Column / row weights
+  root.columnconfigure(0, weight = 1)
+  root.rowconfigure(0, weight = 1)
+
+  main_frame.columnconfigure(0, weight = 1)
+  main_frame.rowconfigure(0, weight = 1)
+
+  for i in range(0, 3):
+    wininfo_frame.rowconfigure(i, weight = 1)
+
+  for i in range(0, 2):
+    uid_frame.columnconfigure(i, weight = 1)
+  for i in range(0, 2):
+    uid_frame.rowconfigure(i, weight = 1)
+
+  for i in range(0, 3):
+    string_frame.columnconfigure(i, weight = 1)
+  for i in range(0, 2):
+    string_frame.rowconfigure(i, weight = 1)
 
   # Ensure our window is on top and try to force the focus on the string entry
   root.attributes('-topmost', True)
@@ -402,7 +470,7 @@ def gui_popup(is_error, message):
   if is_error:
     messagebox.showerror("Error", message)
   else:
-    messagebox.showinfo("", message)
+    messagebox.showinfo("Success", message)
 
   # Destroy the root window
   root.destroy()
@@ -464,6 +532,11 @@ def main():
   mutexargs = argparser.add_mutually_exclusive_group()
 
   mutexargs.add_argument(
+	"-c", "--copyuid",
+	help = "Copy a UID into the clipboard",
+	action = "store_true")
+
+  mutexargs.add_argument(
 	"-s", "--showwininfo",
 	help = "Don't send any string, just show the current window's info " \
 		"when authenticating",
@@ -513,9 +586,10 @@ def main():
   signal(SIGHUP, die_sig_handler)
 
   # Start the keyboard event listener if we have defined hotkeys and we haven't
-  # been asked to manipulate the definitions file or show window information
-  if edit_scan_hotkeys is not None and not args.showwininfo and \
-	args.writedefstring is None and not args.removedefstring:
+  # been passed an action to perform on the command line
+  if edit_scan_hotkeys is not None and not args.copyuid and \
+	not args.showwininfo and args.writedefstring is None and \
+	not args.removedefstring:
     procs[PROC_KBD] = Process(target = keyboard_event_listener,
 				args = (main_in_q,))
     procs[PROC_KBD].start()
@@ -566,33 +640,46 @@ def main():
         # the GUI panel is running)?
         elif msg[0] == GUI_ACTION and procs[PROC_GUI_PANEL] is not None:
 
-          new_entry, winapp, winclass, winname, auth_uid = msg[1]
+          new_entry, winapp, winclass, winname, auth_uid, is_error, message = \
+									msg[1]
 
-          # Lock the definitions file
-          try:
-            defsfile_locked = sc.mutex_acquire(definitions_file, 1) == scc.OK
-          except:
-            defsfile_locked = False
-
-          if defsfile_locked == False:
-            retcode[0] = -1
-            retmsg = "Error securing exclusive access to the definitions file"
-
-          # Kill the gui panel
+          # Kill the GUI panel
           if procs[PROC_GUI_PANEL] is not None:
             procs[PROC_GUI_PANEL].kill()
 
-          # Update the definitions file according to what the GUI panel
-          # instructed us to do
-          if defsfile_locked:
-            retcode[0], retmsg = update_defsfile(new_entry, winapp, winclass,
-						winname, auth_uid)
-            release_defsfile_lock = True
+          # Did the GUI send us a message to display?
+          if message is not None:
 
-          # Display an information or error popup
-          procs[PROC_GUI_POPUP] = Process(target = gui_popup,
-					args = (retcode[0] != 0, retmsg))
-          procs[PROC_GUI_POPUP].start()
+            # Display an confirmation popup
+            procs[PROC_GUI_POPUP] = Process(target = gui_popup,
+						args = (is_error, message))
+            procs[PROC_GUI_POPUP].start()
+
+          # The GUI instructs us to change the definitions file
+          else:
+
+            # Lock the definitions file
+            try:
+              defsfile_locked = sc.mutex_acquire(definitions_file, 1) == scc.OK
+            except:
+              defsfile_locked = False
+
+            if defsfile_locked == False:
+              retcode[0] = -1
+              retmsg = "Error securing exclusive access to the definitions file"
+
+            # Update the definitions file according to what the GUI panel
+            # instructed us to do
+            if defsfile_locked:
+              retcode[0], retmsg = update_defsfile(new_entry, winapp, winclass,
+							winname, auth_uid)
+              release_defsfile_lock = True
+
+            # Display an information or error popup
+            procs[PROC_GUI_POPUP] = Process(target = gui_popup,
+						args = (retcode[0] != 0,
+							retmsg))
+            procs[PROC_GUI_POPUP].start()
 
       # If the GUI panel is running, don't do anything else until it dies
       if procs[PROC_GUI_PANEL] is not None:
@@ -627,14 +714,12 @@ def main():
         sc = None
         continue
 
-      # Have we been asked to manipulate the definitions file or show window
-      # information?
-      if args.showwininfo or args.writedefstring is not None or \
-		args.removedefstring:
+      # Have we been asked to perform an ection on the command line?
+      if args.copyuid or args.showwininfo \
+		or args.writedefstring is not None or args.removedefstring:
 
         # Lock the definitions file before the user authenticates, so another
         # instance of the program can't trigger an autotype while we're busy
-        # modifying the definitions file or showing window information
         try:
           defsfile_locked = sc.mutex_acquire(definitions_file, 1) == scc.OK
         except:
@@ -714,8 +799,28 @@ def main():
         print("Error getting the window in focus. Are you running in X?")
         continue
 
+      # Copy the UID into the clipboard
+      if args.copyuid:
+
+        try:
+          pyperclip.copy(auth_uid)
+          print("UID copied!")
+          retcode[0] = 0
+
+        except:
+          print("Error copying the UID!")
+          retcode[0] = -1
+
+        # Sleep a bit before returning and unlocking the definitions file to
+        # give another process waiting on a successful authentication to
+        # autotype something a chance to choke on the mutex, so it won't
+        # immediately autotype a matching definition for this window
+        sleep(1)
+
+        return retcode[0]
+
       # Only print the information of the window in focus
-      if args.showwininfo:
+      elif args.showwininfo:
 
         print("Window in focus:")
         print("    Application: {}".format(wmclass[1]))
