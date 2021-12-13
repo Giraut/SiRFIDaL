@@ -26,4 +26,3 @@ if [ -f ${PAM_CONFIG}.BAK ]; then
   # Remove the backup file of the previous SiRFIDaL PAM configuration file
   rm ${PAM_CONFIG}.BAK
 fi
-
