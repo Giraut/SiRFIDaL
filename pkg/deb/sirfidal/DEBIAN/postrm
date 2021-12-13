@@ -2,7 +2,8 @@
 
 PAM_CONFIG=/usr/share/pam-configs/sirfidal_pam.config
 
-# We removed systemd unit files, so tell systemd to reload unit files
+# We may have removed or changed systemd unit files, so tell systemd to
+# reload them
 systemctl daemon-reload
 
 # If the SiRFIDaL PAM configuration file has been removed, advise the user to
