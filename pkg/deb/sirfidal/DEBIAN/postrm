@@ -1,0 +1,12 @@
+#!/bin/sh
+
+PAM_CONFIG=/usr/share/pam-configs/sirfidal_pam.config
+
+# We removed systemd unit files, so tell systemd to reload unit files
+systemctl daemon-reload
+
+# If the SiRFIDaL PAM configuration file has been removed, advise the user to
+# re-run pam-auth-update
+if [ ! -f ${PAM_CONFIG} ]; then
+  echo "${PAM_CONFIG} HAS BEEN REMOVED. YOU PROBABLY SHOULD RE-RUN PAM-AUTH-UPDATE!"
+fi

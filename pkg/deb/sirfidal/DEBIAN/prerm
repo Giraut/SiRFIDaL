@@ -1,0 +1,7 @@
+#!/bin/sh
+
+# Stop and disable any running SiRFIDaL services
+systemctl disable --now sirfidal_beep
+systemctl disable --now sirfidal_auto_send_enter_at_login
+systemctl disable --now sirfidal_keyboard_wedge
+systemctl disable --now sirfidal_server

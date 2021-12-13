@@ -1,0 +1,29 @@
+#!/bin/sh
+
+PAM_CONFIG=/usr/share/pam-configs/sirfidal_pam.config
+
+# We reinstalled systemd unit files, so even though they may not have changed,
+# tell systemd to reload them
+systemctl daemon-reload
+
+# If we have a SiRFIDaL PAM configuration file backup, it means we're running
+# after preinst
+if [ -f ${PAM_CONFIG}.BAK ]; then
+
+  # Check if the SiRFIDaL PAM configuration file has been installed for the
+  # first time, or if it has changed, and advise the user to (re-)run
+  # pam-auth-update if it has
+  if [ ! -s ${PAM_CONFIG}.BAK ]; then
+    echo "${PAM_CONFIG} HAS BEEN INSTALLED. YOU PROBABLY SHOULD RUN PAM-AUTH-UPDATE!"
+
+  else
+    if ! cmp -s ${PAM_CONFIG} ${PAM_CONFIG}.BAK; then
+      echo "${PAM_CONFIG} HAS CHANGED. YOU PROBABLY SHOULD RE-RUN PAM-AUTH-UPDATE!"
+    fi
+
+  fi
+
+  # Remove the backup file of the previous SiRFIDaL PAM configuration file
+  rm ${PAM_CONFIG}.BAK
+fi
+

@@ -1,0 +1,17 @@
+#!/bin/sh
+
+PAM_CONFIG=/usr/share/pam-configs/sirfidal_pam.config
+
+# Are we being called for an install or an upgrade?
+if [ "$1" = "install" ] || [ "$1" = "upgrade" ]; then
+
+  # If it exists, back up the current SiRFIDaL PAM config file before installing
+  # the new one, so we can compare them in postinst and advise the user to run
+  # pam-auth-update
+  if [ -f ${PAM_CONFIG} ]; then
+    cp ${PAM_CONFIG} ${PAM_CONFIG}.BAK
+  else
+    touch ${PAM_CONFIG}.BAK
+  fi
+
+fi
