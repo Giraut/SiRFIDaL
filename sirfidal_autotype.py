@@ -40,6 +40,7 @@ from Xlib import X, XK
 from Xlib.ext import record
 from Xlib.protocol import rq
 from tkinter import messagebox
+from subprocess import Popen, PIPE, DEVNULL
 from setproctitle import setproctitle
 from base64 import b64encode, b64decode
 from multiprocessing import Process, Queue
@@ -791,6 +792,14 @@ def main():
           wmname = window.get_wm_name()
           wmclass = window.get_wm_class()
 
+        # Nasty type fixup as sometimes get_wm_name returns bytes instead of str
+        if type(wmname) == bytes:
+          wmname = wmname.decode("ascii")
+        elif type(wmname) == str:
+          pass
+        else:
+          wmname = ""
+
         if wmname == None or wmclass == None or len(wmclass) < 2:
           print("Error getting the window in focus")
           continue
@@ -898,21 +907,38 @@ def main():
                 continue
 
               # "Type" the corresponding string
-              if typer == "xdo":
+              if typer == "xdo":	# Try using xdo
                 try:
                   xdo().enter_text_window(s)
                 except:
                   print("Error typing synthetic keyboard events using xdo")
 
-              elif typer == "pynput":
+              elif typer == "pynput":	# Try using pynput
                 try:
                   kbd = Controller()
                   kbd.type(s)
                 except:
                   print("Error typing synthetic keyboard events using pynput")
 
-              else:
-                print("Error: no usable typer module. Install xdo or pynput")
+              else:			# Try using xte (external command)
+
+                # Create xte typing command string
+                xtecmd = ""
+                instr = False
+                for c in s:
+                  if c in "\r\n":
+                    xtecmd += "key Return\n"
+                  else:
+                    xtecmd += "str " + c + "\n"
+
+                # Run xte and pass it the typing command string through stdin
+                try:
+                  p = Popen(["xte"], stdin = PIPE, stdout = DEVNULL,
+						stderr = DEVNULL)
+                  p.stdin.write(xtecmd.encode("ascii"))
+                  p.stdin.flush()
+                except:
+                  print("Error typing synthetic keyboard events using xte")
 
               break
 

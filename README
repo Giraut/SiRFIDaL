@@ -175,6 +175,8 @@ Manual installation:
       apt install python3-cryptography
       apt install python3-xdo
           -or-
+      apt install xautomation
+          -or-
       python3 -m pip install pynput
 
     * Additional to use sirfidal_beep.py:
