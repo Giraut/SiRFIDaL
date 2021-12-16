@@ -32,31 +32,35 @@ mkdir -p ${BUILDROOT}/usr/local/share/sounds/sirfidal
 mkdir -p ${BUILDROOT}/usr/share/doc/sirfidal
 
 # Populate the package build directory with the source files
-cp -a ${SRC}/README ${BUILDROOT}/usr/share/doc/sirfidal
-cp -a ${SRC}/LICENSE ${BUILDROOT}/usr/share/doc/sirfidal
+install -m 644 ${SRC}/README ${BUILDROOT}/usr/share/doc/sirfidal
+install -m 644 ${SRC}/LICENSE ${BUILDROOT}/usr/share/doc/sirfidal
 
-cp -a ${SRC}/sirfidal_server.py ${BUILDROOT}/usr/local/bin
+install -m 755 ${SRC}/sirfidal_server.py ${BUILDROOT}/usr/local/bin
 
-cp -a ${SRC}/sirfidal_client_class.py ${BUILDROOT}/usr/local/bin
+install -m 644 ${SRC}/sirfidal_client_class.py ${BUILDROOT}/usr/local/bin
 
-cp -a ${SRC}/sirfidal_autolockscreen.py ${BUILDROOT}/usr/local/bin
-cp -a ${SRC}/sirfidal_auto_send_enter_at_login.py ${BUILDROOT}/usr/local/bin
-cp -a ${SRC}/sirfidal_autotype.py ${BUILDROOT}/usr/local/bin
-cp -a ${SRC}/sirfidal_beep.py ${BUILDROOT}/usr/local/bin
-cp -a ${SRC}/sirfidal_getuids.py ${BUILDROOT}/usr/local/bin
-cp -a ${SRC}/sirfidal_keyboard_wedge.py ${BUILDROOT}/usr/local/bin
-cp -a ${SRC}/sirfidal_pam.py ${BUILDROOT}/usr/local/bin
-cp -a ${SRC}/sirfidal_useradm.py ${BUILDROOT}/usr/local/bin
+install -m 755 ${SRC}/sirfidal_autolockscreen.py ${BUILDROOT}/usr/local/bin
+install -m 755 ${SRC}/sirfidal_auto_send_enter_at_login.py ${BUILDROOT}/usr/local/bin
+install -m 755 ${SRC}/sirfidal_autotype.py ${BUILDROOT}/usr/local/bin
+install -m 755 ${SRC}/sirfidal_beep.py ${BUILDROOT}/usr/local/bin
+install -m 755 ${SRC}/sirfidal_getuids.py ${BUILDROOT}/usr/local/bin
+install -m 755 ${SRC}/sirfidal_keyboard_wedge.py ${BUILDROOT}/usr/local/bin
+install -m 755 ${SRC}/sirfidal_pam.py ${BUILDROOT}/usr/local/bin
+install -m 755 ${SRC}/sirfidal_useradm.py ${BUILDROOT}/usr/local/bin
 
-cp -a ${SRC}/sirfidal_server_parameters.py ${BUILDROOT}/etc
-cp -a ${SRC}/sirfidal_clients_parameters.py ${BUILDROOT}/etc
+install -m 600 ${SRC}/sirfidal_server_parameters.py ${BUILDROOT}/etc
+install -m 644 ${SRC}/sirfidal_clients_parameters.py ${BUILDROOT}/etc
 
-cp -a ${SRC}/sirfidal_pam.config ${BUILDROOT}/usr/share/pam-configs
+install -m 644 ${SRC}/sirfidal_pam.config ${BUILDROOT}/usr/share/pam-configs
 
-cp -a ${SRC}/*.service ${BUILDROOT}/lib/systemd/system
-cp -a ${SRC}/*.desktop ${BUILDROOT}/etc/xdg/autostart
+install -m 644 ${SRC}/*.service ${BUILDROOT}/lib/systemd/system
+install -m 644 ${SRC}/*.desktop ${BUILDROOT}/etc/xdg/autostart
 
-cp -a ${SRC}/sounds/* ${BUILDROOT}/usr/local/share/sounds/sirfidal
+install -m 644 ${SRC}/sounds/* ${BUILDROOT}/usr/local/share/sounds/sirfidal
+
+# Fixup permissions
+find ${PKGBUILD} -type d -exec chmod 755 {} \;
+chmod 644 ${PKGBUILD}/SPECS/sirfidal.spec
 
 # Set the version in the spec file
 sed -i "s/^Version:.*\$/Version: ${VERSION}/" ${PKGBUILD}/SPECS/sirfidal.spec

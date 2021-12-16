@@ -131,6 +131,10 @@ encrypted_uids_file = "/etc/sirfidal_encr_uids"
 # dictionary will be translated internally into the corresponding value, as if
 # the reader had read the value in the first place. Useful for special tags
 # that report two UIDs
+#!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+#!!! IF YOU DEFINE UIDS HERE, YOU SHOULD ENSURE THIS !!!
+#!!!   CONFIGURATION FILE IS ONLY READABLE BY ROOT   !!!
+#!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 uids_translation_table = {}
 
 # Names of disallowed parent process names for requesting processes. This is a
