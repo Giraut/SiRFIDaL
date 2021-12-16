@@ -58,6 +58,7 @@ chmod 755 ${PKGBUILD}/DEBIAN/postinst
 chmod 755 ${PKGBUILD}/DEBIAN/postrm
 chmod 755 ${PKGBUILD}/DEBIAN/preinst
 chmod 755 ${PKGBUILD}/DEBIAN/prerm
+chmod 644 ${PKGBUILD}/usr/share/doc/sirfidal/copyright
 
 # Build the .deb package
 fakeroot dpkg -b ${PKGBUILD} ${PKG}
