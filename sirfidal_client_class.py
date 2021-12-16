@@ -141,10 +141,12 @@ class sirfidal_client:
   def waitauth(self, user = None, wait = _sirfidal_default_auth_wait):
     """Authenticate a user. If user is None, use the current username. If wait
     isn't specified, use the default wait for authentication.
-    Return (AUTHOK, []) if the user is simply authenticated,
-    (AUTHOK, [UID #1, UID #2, ...]) if the user is authenticated and is allowed
-    to know which UID(s) authenticated them, or (NOAUTH, []) if the user is
-    not authenticated.
+    Return (AUTHOK, []) if the user is authenticated and the requestor is
+    another user, (AUTHOK, [[UID #1, None], [UID #2, None], ...]) if the user
+    is authenticated and the requestor is the user themselves,
+    (AUTHOK, [[UID #1, None or authtok #1], [UID #2, None or authtok #2], ...)
+    if the user is authenticated and the requestor is root, or (NOAUTH, [])
+    if the user is not authenticated.
     NOAUTH is 0 and AUTHOK is not 0, so the result may be tested directly as a
     condition
     """
@@ -166,20 +168,24 @@ class sirfidal_client:
 				timeout = wait + 5)
 
     # Check that the reply is valid
-    if re.search("^(NOAUTH|AUTHOK( +[0-9a-fA-F]+)*)$", reply):
-      f = reply.upper().split()
-      return (AUTHOK, f[1:]) if f[0] == "AUTHOK" else (NOAUTH, [])
+    if re.search("^(NOAUTH|AUTHOK( +[0-9a-fA-F]+(:[^\s]+)?)*)$", reply):
+      f = reply.split()
+      return (AUTHOK, [[ua[0].upper(), ua[1] if ua[1:] else None] \
+			for ua in [ua.split(":", 1) \
+			for ua in f[1:]]]) if f[0] == "AUTHOK" else \
+		(NOAUTH, [])
 
     else:
       raise ValueError("unknown server reply '{}'".format(reply))
 
 
 
-  def _useradm(self, cmd, user, wait):
-    """Manipulate the user <-> UIDs association: associate a user and a UID
-    (ADDUSER), disassociate a user from a UID (DELUSER with wait > 0) or
-    disassociate a user from all UIDs (DELUSER with wait < 0). If user is None,
-    use the current username.
+  def _useradm(self, cmd, user, wait, authtok):
+    """Manipulate the user/UID/authtok associations: associate a user and a
+    UID, optionally with a secondary authentication token (ADDUSER), delete a
+    user/UID/authtok (DELUSER with wait > 0) or delete all user/UID/authtok
+    associations (DELUSER with wait < 0).
+    If user is None, use the current username.
     Return OK, NOAUTH, WRITEERR, TIMEOUT, EXISTS or NONE depending on the
     command.
     OK is > 0 while the other error codes are <= 0, so the command's success
@@ -194,8 +200,14 @@ class sirfidal_client:
     if not (user and all([" " <= c <= "~" for c in user])):
       raise ValueError("invalid username")
 
+    # Check if the authtok is valid
+    if authtok is not None and \
+		not (authtok and all([" " <= c <= "~" for c in authtok])):
+      raise ValueError("invalid authentication token")
+
     # Send the command to the server and get the reply
-    reply = self._command("{} {} {}".format(cmd, user, wait),
+    reply = self._command("{} {} {}{}".format(cmd, user, wait,
+				(" " + authtok) if authtok is not None else ""),
 				timeout = max(5, wait + 5))
 
     # Check that the reply is valid and return the appropriate return value
@@ -217,10 +229,11 @@ class sirfidal_client:
 
 
 
-  def adduser(self, user = None, wait = _sirfidal_default_auth_wait):
-    """Associate a user and a UID. If user is None, use the current username.
-    If wait isn't specified for commands that use it, use the default wait time
-    for scanning a UID.
+  def adduser(self, user = None, authtok = None,
+		wait = _sirfidal_default_auth_wait):
+    """Add a user/UID/authtok association (authtok optional).
+    If user is None, use the current username.
+    If wait isn't specified, use the default wait time for scanning a UID.
     Return OK, NOAUTH, WRITEERR, TIMEOUT or EXISTS
     OK is > 0 while the other error codes are <= 0, so the command's success
     may be tested with a comparison with zero.
@@ -230,14 +243,14 @@ class sirfidal_client:
     if wait < 0:
       raise ValueError("invalid wait")
 
-    return self._useradm("ADDUSER", user, wait)
+    return self._useradm("ADDUSER", user, wait, authtok)
 
 
 
   def deluser(self, user = None, wait = _sirfidal_default_auth_wait):
-    """Disassociate a user from a UID. If user is None, use the current
-    username. If wait isn't specified for commands that use it, use the
-    default wait time for scanning a UID.
+    """Delete a user/UID/authtok association matching a user/UID pair.
+    If the user is None, use the current username.
+    If wait isn't specified, use the default wait time for scanning a UID.
     Return OK, NOAUTH, WRITEERR, TIMEOUT or NONE
     OK is > 0 while the other error codes are <= 0, so the command's success
     may be tested with a comparison with zero.
@@ -247,19 +260,19 @@ class sirfidal_client:
     if wait < 0:
       raise ValueError("invalid wait")
 
-    return self._useradm("DELUSER", user, wait)
+    return self._useradm("DELUSER", user, wait, None)
 
 
 
   def delalluser(self, user = None):
-    """Delete all user <-> UIDs associations for a user. If user is None, use
-    the current username.
+    """Delete all user/UID/authtok associations matching a user.
+    If user is None, use the current username.
     Return OK, NOAUTH, WRITEERR, TIMEOUT or NONE
     OK is > 0 while the other error codes are <= 0, so the command's success
     may be tested with a comparison with zero.
     """
 
-    return self._useradm("DELUSER", user, -1)
+    return self._useradm("DELUSER", user, -1, None)
 
 
 

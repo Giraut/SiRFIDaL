@@ -746,7 +746,8 @@ def main():
 
     # Get the user's authentication status
     try:
-      _, uids = sc.waitauth(wait = 0 if uids_set is None else 1)
+      _, uids_authtoks = sc.waitauth(wait = 0 if uids_set is None else 1)
+      uids = [ua[0] for ua in uids_authtoks]
 
     except KeyboardInterrupt:
       retcode[0] = 0

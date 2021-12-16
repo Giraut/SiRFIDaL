@@ -1,6 +1,6 @@
                 SiRFIDaL - Simple RFID authentication for Linux
                 -----------------------------------------------
-                                    v1.3.2
+                                    v1.4.0
 
 
 This is a set of utilities to use RFID or NFC transponder UIDs as authentication
@@ -123,6 +123,7 @@ Manual installation:
       apt install python3-psutil
       apt install python3-filelock
       apt install python3-setproctitle
+      apt install python3-cryptography
       apt install libpam-python
 
       cp sirfidal_server.py /usr/local/bin
@@ -187,7 +188,6 @@ Manual installation:
       apt install pyperclip
       apt install python3-tk
       apt install python3-xlib
-      apt install python3-cryptography
       apt install python3-xdo
           -or-
       apt install xautomation
@@ -428,15 +428,31 @@ PAM configuration:
 
 
 
-Associating / disassociating UIDS and usernames:
+Adding and deleting user, UID and optional authentication token associations:
 
   A user is only authenticated if at least one active UID is associated with
   their username. Therefore, one or more UIDs must first be enrolled for a
   particular user.
 
-  Use the sirfidal_useradm utility to associate a UID with a user (-a),
-  disassociate a UID from a user (-d) or remove all UID <-> user associations
-  (-D).
+  Use the sirfidal_useradm.py utility to add a user / UID association (-a),
+  delete a user / UID association (-d) or delete all user / UID associatons for
+  a given user (-D).
+
+  In additionm when adding an association, you may specify a secondary
+  authentication token to be added to this association: when this token is
+  specified, it will be used by the SiRFIDaL PAM module to set the PAM authtok
+  variable, which is passed to other PAM modules to unlock the keyring or
+  mount an encrypted Private space for example.
+
+  You can therefore set the optional secondary authentication token to your
+  regular Unix password to automate everything in your session as if you had
+  logged in from the regular Unix prompt, but logging in using SiRFIDaL.
+
+  Note that if you don't want to set the optional secondary authentication
+  token, the PAM authtok will be set to the authenting UID - meaning that, if
+  you want to automate unlocking your keyring or mounting your encrypted
+  Private space, you'll have to set your Unix password to match your UID
+  instead.
 
   As root:
 
@@ -444,10 +460,13 @@ Associating / disassociating UIDS and usernames:
     sirfidal_useradm.py -d username
     sirfidal_useradm.py -D username
 
-  As user (only disassociations allowed):
+  As user (only associations and deletions for the same user allowed):
 
+    sirfidal_useradm.py -a
     sirfidal_useradm.py -d
     sirfidal_useradm.py -D
+
+  Note: Authentication tokens don't work in RPM-based distributions - see below
 
 
 
@@ -569,6 +588,27 @@ Incompatibility with Wayland:
 
   See for instance https://wiki.debian.org/GDM#Disabling_Wayland
   or https://linuxhint.com/enable-disable-wayland-ubuntu/
+
+
+
+Authentication tokens in RPM-based distributions:
+
+Unlike Debian-based distributions, the pam_python package isn't included in
+RPM-based distributions such as Fedora or CentOS. As a result, unless you're
+willing to build and install it yourself from sources onto your system,
+you'll have to execute sirfidal_pam.py from pam_exec.so instead of
+pam_python.so.
+
+Unfortunately, while pam_exec.so is ubiquitous, it's more limited than
+pam_python.so: it only lets sirfidal_pam.py report the authentication status,
+whereas the latter also let it set the PAM authtok variable, which is necessary
+to pass a the authentication token further down the PAM stack to other PAM
+modules.
+
+Therefore, in RPM-based distributions, while SiRFIDaL works for basic
+authentication purposes, it won't work for more advanced functionalities such
+automatic keyring unlocking unless you're willing to spend time to install
+pam_python manually.
 
 
 

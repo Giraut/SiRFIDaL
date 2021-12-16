@@ -1,8 +1,9 @@
 #!/usr/bin/python3
-"""This script is the cornerstone of the SiRFIDaL system: it runs as root in
+"""This program is the cornerstone of the SiRFIDaL system: it runs as root in
 the background and provides secure authentication services for local processes
 wishing to authenticate a user against a RFID or NFC UID, or manipulate the
-list UID <-> user associations without exposing the UIDs to the processes.
+list of user / UID / optional secondary authentication token associations
+without exposing UIDs or authentication tokens to unauthorized processes.
 
 By default, only startup messages and error messages are printed out. To output
 extended debug messages, invoke with -d / --debug. To suppress startup
@@ -12,8 +13,8 @@ The script performs the following functions:
 
 * Background functions
 
-  - Handle reading RFID / NFC UIDs from different connected readers: one or more
-    PC/SC readers, serial readers, HID readers, Android devices used as
+  - Read RFID / NFC UIDs from different connected readers: one or more PC/SC
+    readers, serial readers, HID readers, Android devices used as
     external NFC readers, Proxmark3 readers, Chameleon Mini / Tiny,
     uFR / uFR Nano Online in slave mode, readers reporting UIDs using HTTP
     GET or POST or TCP readers may be watched concurrently
@@ -22,25 +23,50 @@ The script performs the following functions:
     of UIDs of RFID or NFC transponders currently readable by the readers at
     any given time
 
-  - Manipulate the list of UID <-> user association file: read the encrypted
-    UIDs file, match active UIDs against the encrypted UIDs, encrypt new UIDs
-    and associate them with users, and write the file back.
+  - Manipulate the user/UID/authtok association database contained in the
+    encrypted UIDs file. Each association is either:
+
+    - One username and one UID
+    - One username, one UID and one optional secondary authentication token
+
+    If the authentication token is present in the association, it is used
+    typically by the SiRFIDaL PAM module to set authtok in the PAM stack, so
+    that things like keyring or encrypted directories may be unlocked by the
+    relevant PAM modules when logging in with SiRFIDaL, provided the optional
+    secondary authentication token matches the user's regular login password.
+
+    The SiRFIDaL server reads and writes the encrypted UIDs file, creates and
+    deletes user/UID or user/UID/authtok associations according to which user
+    is allowed to do what operation.
 
 * Server for local frontend programs to request one of the following services:
 
-  - Authenticate a user against one of the currently active UIDs, waiting for
-    up to a requested time for a successful authentication
+  - Authenticate a user against one of the currently registered user/UID or
+    user/UID/authtok associations, waiting for up to a requested time for a
+    successful UID authentication, then return the authentication status.
 
-  - Add an authenticated user - i.e. associate a user with a single currently
-    active UID and save this association in the encrypted UIDs file. Only root
-    or the user requesting the association for themselves may request it
+    If the requestor is root or the same user they request authentication for,
+    the list of authenticating UIDs is also returned if the authentication is
+    successful.
 
-  - Delete an authenticated user - i.e. disassociate a user from a single
-    currently active UID in the encrypted UIDs file. Only root or the user
-    requesting the deletion for themselves may request it
+    If the user is root, authtoks are also returned if the authentication is
+    successful, if found in the matching associations.
 
-  - Delete all entries for a user in the encrypted UIDs file. Only root or the
-    user requesting the deletion for themselves may request it
+  - Add an authenticated user - i.e. associate a user and a UID, and optinally
+    an authtok - then save this association in the encrypted UIDs file.
+    Only root may request an association with a new user or UID. However, a
+    normal user with an existing user/UID association may request that a new
+    authtok be added to the association.
+
+  - Delete an authenticated user - i.e. delete a user/UID association,
+    including an optional associated authtok from the encrypted UIDs file.
+    Only root or the user requesting the deletion for themselves may perform
+    this operation.
+
+  - Delete all associations for an authenticated user in the encrypted UIDs
+    file, including any optional associated authtoks, from the the encrypted
+    UIDs file. Only root or the user requesting the deletion for themselves may
+    perform this operation.
 
   - Watch the evolution of the number of active UIDs in real-time: not an
     authentication-related function, but a way for requesting processes to
@@ -75,7 +101,8 @@ list of server requests and responses:
 
 Service:        Authenticate a user
 Client sends:   WAITAUTH <user> <max wait (int or float) in s>
-Server replies: AUTHOK [authenticating UID #1] [authenticating UID #2] ...
+Server replies: AUTHOK [authenticating UID #1[:authtok #1]] [authenticating
+                       UID#2[:authtok #2]] ...
                 NOAUTH
 
 Service:        Watch the evolution of the number of active UIDs in real-time
@@ -87,15 +114,16 @@ Client sends:   WATCHUIDS
 Server replies: UIDS [active UID #1] [active UID #2] [active UID #3] ...
                 NOAUTH
 
-Service:        Add a user <-> UID association in the encrypted UIDs file
-Client sends:   ADDUSER <user> <max wait (int or float) in s>
+Service:        Add a user/UID/authtok in the encrypted UIDs file
+                (authtok optional)
+Client sends:   ADDUSER <user> <max wait (int or float) in s> [authtok]
 Server replies: TIMEOUT
                 EXISTS
                 WRITEERR
                 OK
 		NOAUTH
 
-Service:        Delete a user <-> UID association in the encrypted UIDs file
+Service:        Delete a user/UID/authtok from the encrypted UIDs file
 Client sends:   DELUSER <user> <max wait (int or float) in s>
 Server replies: TIMEOUT
                 NONE
@@ -103,7 +131,7 @@ Server replies: TIMEOUT
                 OK
 		NOAUTH
 
-Service:        Delete all entries in encrypted UIDs file matching a user
+Service:        Delete all entries matching a userin the encrypted UIDs file
 Client sends:   DELUSER <user> -1
 Server replies: NONE
                 WRITEERR
@@ -123,14 +151,6 @@ Server replies: OK
 The server will reply to any other request it doesn't understand with:
 		UNKNOWN
 
-After a successful WAITAUTH request, if the requesting process owner is root or
-the same as the user it requests an authentication for (i.e. the user
-authenticates themselves or root authenticate a user), the server returns the
-authenticating UID(s) in plaintext after the AUTHOK reply, to use for whatever
-purpose they see fit (encryption for example). If the requesting process owner
-requests authentication for another user and isn't root (e.g. su), the UID(s)
-aren't sent after AUTHOK.
-
 After receiving a reply to a WAITAUTH, ADDUSER or DELUSER request, the client
 is expected to close the socket within a certain grace period. The client may
 lodge a new request within that grace period. If it doesn't, the server will
@@ -141,8 +161,6 @@ sends updates and never closes the socket. It's up to the client to close its
 end of the socket to terminate the request. At any given time, the client may
 lodge a new request, canceling and replacing the running WATCHNBUIDS or
 WATCHUIDS request.
-
-See the parameters below to configure this script.
 """
 
 ### Parameters
@@ -160,6 +178,7 @@ import json
 import struct
 import psutil
 import inspect
+import secrets
 import argparse
 from pty import openpty
 from select import select
@@ -169,8 +188,10 @@ from crypt import crypt, mksalt
 from signal import signal, SIGCHLD
 from setproctitle import setproctitle
 from filelock import FileLock, Timeout
+from base64 import b64encode, b64decode
 from subprocess import Popen, DEVNULL, PIPE
 from multiprocessing import Process, Queue, Pipe
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from socket import socket, timeout, AF_UNIX, SOCK_STREAM, SOL_SOCKET, \
 			SO_REUSEADDR, SO_PEERCRED
 
@@ -242,6 +263,7 @@ class client:
     self.main_out_p = None
     self.request = None
     self.name = None
+    self.authtok = None
     self.mutexes = set()
     self.expires = None
     self.new_request = True
@@ -1965,8 +1987,8 @@ def client_handler(pid, uid, gid, pw_name, is_remote_user,
           continue
 
         # The main process reports an authentication result: send the result
-        # to the client. Also send the authenticating UIDs in plaintext if the
-        # main process deems it okay
+        # to the client. Also send the authenticating UIDs, or UID/authtok pairs
+        # the main process deems it okay
         elif msg[0] == AUTH_RESULT:
           csendbuf = "AUTHOK" if msg[1][0] == AUTH_OK else "NOAUTH"
           if msg[1][1]:
@@ -1992,20 +2014,21 @@ def client_handler(pid, uid, gid, pw_name, is_remote_user,
           continue
 
         # The main process reports an error updating the encrypted UIDs
-        # because the user <-> UID association already exists: notify the client
+        # because the user/UID or user/UID/authtok association already exists:
+        # notify the client
         elif msg[0] == ENCRUIDS_UPDATE_ERR_EXISTS:
           csendbuf = "EXISTS"
           continue
 
         # The main process reports an error updating the encrypted UIDs
-        # because it hasn't found any user <-> UID association to delete:
+        # because it hasn't found a matching user/UID association to delete:
         # notify the client
         elif msg[0] == ENCRUIDS_UPDATE_ERR_NONE:
           csendbuf = "NONE"
           continue
 
         # The main process reports a timeout waiting for a UID to associate
-        # or disassociate with a UID
+        # or disassociate with a user/authtok
         elif msg[0] == ENCRUIDS_UPDATE_ERR_TIMEOUT:
           csendbuf = "TIMEOUT"
           continue
@@ -2086,7 +2109,8 @@ def client_handler(pid, uid, gid, pw_name, is_remote_user,
           if l == "WATCHNBUIDS":
             main_in_q.put((WATCHNBUIDS_REQUEST, (pid,)))
 
-          # WATCHUIDS request: the user must be root. If not, deny the request
+          # WATCHUIDS request: the requestor must be root. If not, deny the
+          # request
           elif l == "WATCHUIDS":
             if uid == 0:
               main_in_q.put((WATCHUIDS_REQUEST, (pid,)))
@@ -2105,19 +2129,22 @@ def client_handler(pid, uid, gid, pw_name, is_remote_user,
 						else m[0][0], float(m[0][1]))))
 
             else:
-              # ADDUSER request: the user must be root. If not, deny the request
-              m = re.findall("^ADDUSER\s([^\s]+)\s([-+]?[0-9]+\.?[0-9]*)$", l)
+              # ADDUSER request: the requestor must be root, or the same user
+              # for which a new association is requested. If not, deny the
+              # request
+              m = re.findall("^ADDUSER\s([^\s]+)\s([-+]?[0-9]+\.?[0-9]*)"
+				"(\s([^\s]+))?$", l)
               if m:
-                if uid == 0:
-                  main_in_q.put((ADDUSER_REQUEST, (pid, m[0][0],
-							float(m[0][1]))))
+                if uid == 0 or m[0][0] == pw_name:
+                  main_in_q.put((ADDUSER_REQUEST, (pid, m[0][0], float(m[0][1]),
+						m[0][3] if m[0][3] else None)))
                 else:
                   csendbuf = "NOAUTH"
 
               else:
-                # DELUSER request: the user must be root, or be the same user
-                # as the one for which a new association is requested. If not,
-                # deny the request
+                # DELUSER request: the requestor must be root, or the same user
+                # as the one for which the deletion is requested. If not, deny
+                # the request
                 m = re.findall("^DELUSER\s([^\s]+)\s([-+]?[0-9]+\.?[0-9]*)$", l)
                 if m:
                   if uid == 0 or m[0][0] == pw_name:
@@ -2195,20 +2222,34 @@ def load_encruids():
     encruids = []
     return None
 
-  # Validate the structure of the JSON format
+  # Validate and normalize the structure of the JSON format: each entry should
+  # be a list of 2 or 3 strings:
+  # [username, associated encrypted UID]
+  #   -or-
+  # [username, associated encrypted UID, associated authtok]
+  # If the optional authtok is missing, add None in its place internally
   if not isinstance(new_encruids, list):
     encruids = []
     return None
 
   for entry in new_encruids:
-    if not (isinstance(entry, list) and len(entry) == 2 and
-		isinstance(entry[0], str) and isinstance(entry[1], str)):
+    if not isinstance(entry, list):
       encruids = []
       return None
+    le = len(entry)
+    if not ((le == 2 and isinstance(entry[0], str) and \
+		isinstance(entry[1], str)) or \
+		(le == 3 and isinstance(entry[0], str) and \
+		isinstance(entry[1], str) and isinstance(entry[2], str))):
+      encruids = []
+      return None
+    if le == 2:
+      entry.append(None)
 
   # Update the encrypted UIDs currently in memory
   encruids_file_mtime = mt
   encruids = new_encruids
+
   return True
 
 
@@ -2219,11 +2260,43 @@ def write_encruids(new_encruids):
 
   try:
     with open(encrypted_uids_file, "w") as f:
-      json.dump(new_encruids, f, indent = 2)
+      json.dump([e[:2] if e[2] == None else e for e in new_encruids],
+		f, indent = 2)
   except:
     return False
 
   return True
+
+
+
+def encrypt(pst, key):
+  """Encrypt a plaintext string into an encrypted base64 string
+  """
+
+  # Repeat the key to make it 32 bytes long (AES256 needs 32 bytes)
+  key = (key.encode("ascii") * 32)[:32]
+
+  # Encrypt the string
+  nonce = secrets.token_bytes(12)  # GCM mode needs 12 fresh bytes every time
+  es = nonce + AESGCM(key).encrypt(nonce, pst.encode("utf-8"), b"")
+
+  # Return the encrypted text as a base64 string
+  return b64encode(es).decode("ascii")
+
+
+
+def decrypt(bes, key):
+  """Decrypt an encrypted base64 string into a plaintext string
+  """
+
+  # Repeat the key to make it 32 bytes long (AES256 needs 32 bytes)
+  key = (key.encode("ascii") * 32)[:32]
+
+  try:
+    es = b64decode(bes)
+    return AESGCM(key).decrypt(es[:12], es[12:], b"").decode("utf-8")
+  except:
+    return None
 
 
 
@@ -2462,7 +2535,7 @@ def main():
   active_uids_update = False
 
   auth_cache = {}
-  auth_uids_cache = {}
+  auth_uids_authtoks_cache = {}
   active_clients = {}
 
   now = time()
@@ -2541,17 +2614,19 @@ def main():
 
       # The client requested that we either:
       # - authenticate a user within a certain delay (capped)
-      # - associate a user with a UID and add it to the encrypted UIDs file,
-      #   waiting for the new UID within a certain delay (capped)
-      # - disassociate a user from a UID, waiting for the UID within a certain
-      #   deiay (capped) or remove all entries for the user in the encrypted
-      #   UIDs file (delay < 0)
+      # - associate a user / authtok with a UID and add it to the encrypted
+      #   UIDs file, waiting for the new UID within a certain delay (capped)
+      # - disassociate a user / authtok from a UID, waiting for the UID within
+      #   a certain deiay (capped) or remove all entries for the user in the
+      #   encrypted UIDs file (delay < 0)
       elif msg[0] in (WAITAUTH_REQUEST, ADDUSER_REQUEST, DELUSER_REQUEST):
 
         # Update this client's request in the list of active requests. Cap the
         # delay the client may request
         active_clients[msg[1][0]].request = msg[0]
         active_clients[msg[1][0]].name = msg[1][1]
+        if msg[0] == ADDUSER_REQUEST:
+          active_clients[msg[1][0]].authtok = msg[1][3]
         active_clients[msg[1][0]].expires = None if msg[1][2] < 0 else \
 			now + (msg[1][2] if msg[1][2] <= max_auth_request_wait \
 			else max_auth_request_wait)
@@ -2647,7 +2722,7 @@ def main():
     # list of active UIDs has changed, wipe the user authentication cache
     if load_encruids() or active_uids_update:
       auth_cache = {}
-      auth_uids_cache = {}
+      auth_uids_authtoks_cache = {}
 
 
 
@@ -2655,7 +2730,7 @@ def main():
     for cpid in active_clients:
 
       auth = False
-      auth_uids = []
+      auth_uids_authtoks = []
 
 
 
@@ -2690,57 +2765,105 @@ def main():
           if active_clients[cpid].name in auth_cache:
 
             auth = auth_cache[active_clients[cpid].name]
-            auth_uids = auth_uids_cache[active_clients[cpid].name]
+            auth_uids_authtoks = auth_uids_authtoks_cache[active_clients[cpid]
+							.name]
 
-          # otherwise try to match all the active UIDs with the registered
+          # ...otherwise try to match all the active UIDs with the registered
           # encrypted UIDs associated with that user
           else:
 
             for uid in active_uids:
-              for registered_user, registered_uid_encr in encruids:
+              for registered_user, registered_uid_encr, \
+			registered_authtok_encr in encruids:
                 if registered_user == active_clients[cpid].name and crypt(
 			uid, registered_uid_encr) == registered_uid_encr:
-                  auth = True		# User authenticated...
-                  auth_uids.append(uid)	#...with this UID
+                  authtok = decrypt(registered_authtok_encr, uid) \
+				if registered_authtok_encr else None
+                  auth = True				# User authenticated...
+                  auth_uids_authtoks.append((uid, authtok))	# with these UID
+								# and authtok
 
             # Cache the result of this authentication - valid as long as the
             # list of active UIDs doesn't change and the encrypted UIDs file
-            # isn't reloaded - to avoid calling crypt() each time a requesting
-            # process asks an authentication and nothing has changed since the
-            # previous request
+            # isn't reloaded - to avoid calling doing encryption / decryption
+            # each time a requesting process asks an authentication and nothing
+            # has changed since the previous request
             auth_cache[active_clients[cpid].name] = auth
-            auth_uids_cache[active_clients[cpid].name] = auth_uids
+            auth_uids_authtoks_cache[active_clients[cpid].name] = \
+							auth_uids_authtoks
 
         # Add user request: if we have an active UIDs update and exactly one
         # more active UID in the new list of active UIDs, associate that new
-        # UID with the requested user
+        # UID with the requested user / authtok
         elif active_clients[cpid].request == ADDUSER_REQUEST and \
 		active_uids_update and \
 		len(active_uids) == len(active_uids_prev) + 1:
 
-          new_encruids = encruids.copy()
+          new_encruids = []
 
-          # Don't replace an existing user <-> UID association: if we find one,
-          # notify the client handler and replace the request with a fresh void
-          # request and associated timeout
+          # If the requestor isn't root, assume the request will be blocked
+          deny_new_assoc = active_clients[cpid].uid != 0
+
+          # Make a copy of the current encrypted UIDs file, omitting any
+          # existing user/UID/authtok associations.
+          # Send an error back to the client and replace the request with a
+          # fresh void request and associated timeout if we find an
+          # user/UID/authtok association identical to the one the client is
+          # requesting.
+          # If we find a existing user/UID association identical to the one the
+          # client is requestion, but with a different authtok, allow the
+          # operation, as normal users are allowed to modify they existing
+          # registered authtok.
           new_active_uid = (set(active_uids) - set(active_uids_prev)).pop()
-          for registered_user, registered_uid_encr in new_encruids:
-            if registered_user == active_clients[cpid].name and crypt(
-			new_active_uid,
-			registered_uid_encr) == registered_uid_encr:
-              active_clients[cpid].main_out_p.send(
+          for registered_user, registered_uid_encr, \
+		registered_authtok_encr in encruids:
+            if registered_user != active_clients[cpid].name:
+              new_encruids.append([registered_user, registered_uid_encr,
+					registered_authtok_encr])
+            else:
+              if crypt(new_active_uid, registered_uid_encr) != \
+				registered_uid_encr:
+                new_encruids.append([registered_user, registered_uid_encr,
+					registered_authtok_encr])
+              else:
+                if (registered_authtok_encr is None and \
+			active_clients[cpid].authtok is None) or \
+			(registered_authtok_encr is not None and \
+			active_clients[cpid].authtok is not None and \
+			decrypt(registered_authtok_encr, new_active_uid) == \
+			active_clients[cpid].authtok):
+                  active_clients[cpid].main_out_p.send(
 						(ENCRUIDS_UPDATE_ERR_EXISTS,))
-              active_clients[cpid].request = VOID_REQUEST
-              active_clients[cpid].expires = now + \
-			client_force_close_socket_timeout
-              break;
+                  active_clients[cpid].request = VOID_REQUEST
+                  active_clients[cpid].expires = now + \
+					client_force_close_socket_timeout
+                  break;
+                else:
+                  if active_clients[cpid].pw_name == active_clients[cpid].name:
+                    deny_new_assoc = False
 
-          # Encrypt and associate the UID with the user, write the new
-          # encrypted UIDs file and replace the request with a fresh void
+          # If no existing user/UID association was found in the existing
+          # encrypted UIDs file and the requestor isn't root, send the client an
+          # authorization error and replace the request with a fresh void
           # request and associated timeout
+          if deny_new_assoc:
+            active_clients[cpid].main_out_p.send((AUTH_RESULT,
+							(AUTH_NOK, None)))
+            active_clients[cpid].request = VOID_REQUEST
+            active_clients[cpid].expires = now + \
+					client_force_close_socket_timeout
+
+          # Encrypt the UID and the authtok, associate then with the user,
+          # write the new encrypted UIDs file, then replace the request
+          # with a fresh void request and associated timeout
           if active_clients[cpid].request != VOID_REQUEST:
-            new_encruids.append([active_clients[cpid].name, crypt(
-				new_active_uid, mksalt())])
+            authtok_encr = encrypt(active_clients[cpid].authtok,
+				new_active_uid) \
+				if active_clients[cpid].authtok is not None \
+				else None
+            new_encruids.append([active_clients[cpid].name,
+					crypt(new_active_uid, mksalt()),
+					authtok_encr])
             if write_encruids(new_encruids):
               active_clients[cpid].main_out_p.send((ENCRUIDS_UPDATE_OK,))
             else:
@@ -2751,8 +2874,8 @@ def main():
 
         # Delete user request: if we have an active UIDs update and exactly one
         # more active UID in the new list of active UIDs, disassociate
-        # any matching user <-> UID - unless we have no timeout, in which case
-        # remove all user <-> UID associations matching the requested user
+        # any matching user/UID - unless we have no timeout, in which case
+        # remove all associations matching the requested user
         elif active_clients[cpid].request == DELUSER_REQUEST and \
 		(active_clients[cpid].expires == None or (
 		active_uids_update and \
@@ -2760,23 +2883,25 @@ def main():
 
           new_encruids = []
 
-          # Find one or more existing user <-> UID associations and remove
+          # Find one or more existing matching user/UID associations and remove
           # them if needed
           assoc_deleted = False
           new_active_uid = (set(active_uids) - set(active_uids_prev)).pop() \
 				if active_uids_update else ""
-          for registered_user, registered_uid_encr in encruids:
+          for registered_user, registered_uid_encr, \
+		registered_authtok_encr in encruids:
             if registered_user == active_clients[cpid].name and (
 			active_clients[cpid].expires == None or crypt(
 			new_active_uid,
 			registered_uid_encr) == registered_uid_encr):
               assoc_deleted = True
             else:
-              new_encruids.append([registered_user, registered_uid_encr])
+              new_encruids.append([registered_user, registered_uid_encr,
+					registered_authtok_encr])
 
           # If we found one or more associations to delete, write the new
-          # encrypted UIDs file. Otherwise notify the client handler. Then
-          # replace the request with a fresh void request and associated timeout
+          # encrypted UIDs file. Otherwise notify the client. Then replace the
+          # request with a fresh void request and associated timeout
           if assoc_deleted:
             if write_encruids(new_encruids):
               active_clients[cpid].main_out_p.send((ENCRUIDS_UPDATE_OK,))
@@ -2790,7 +2915,7 @@ def main():
 
         # Named mutex acquisition: check that the requested mutex name isn't
         # used by any other client. If it is free to use, assign it to this
-        # client, notify the client handler then replace the request with a
+        # client, notify the client then replace the request with a
         # fresh void request and associated timeout
         elif active_clients[cpid].request == MUTEXACQ_REQUEST:
 
@@ -2807,24 +2932,28 @@ def main():
       # Process request timeouts:
 
       # If an authentication request has timed out or the authentication is
-      # successful, notify the client handler and replace the request with
-      # a fresh void request and associated timeout. If the requesting process
-      # owner is root or the same as the user they request an authentication
-      # for, they have the right to know the authenticating UID(s), so
-      # send them along.
+      # successful, notify the client and replace the request with a fresh void
+      # request and associated timeout. If the requestor is root or the same
+      # user they request an authentication for, they're allowed to know the
+      # authenticating UID(s), so send them along. If the requestor is root
+      # only, they also have the right to get the authtoks.
       if active_clients[cpid].request == WAITAUTH_REQUEST and \
 		(auth or active_clients[cpid].expires == None or \
 		now >= active_clients[cpid].expires):
-        active_clients[cpid].main_out_p.send((AUTH_RESULT,
-		(AUTH_OK if auth else AUTH_NOK, auth_uids if auth and \
-		(active_clients[cpid].name == active_clients[cpid].pw_name or \
-		active_clients[cpid].uid == 0) else None)))
+        if auth:
+          if active_clients[cpid].uid == 0:
+            utl = [uid if authtok is None else "{}:{}".format(uid, authtok) \
+			for uid, authtok in auth_uids_authtoks]
+          elif active_clients[cpid].name == active_clients[cpid].pw_name:
+            utl = [uid for uid, _ in auth_uids_authtoks]
+          active_clients[cpid].main_out_p.send((AUTH_RESULT, (AUTH_OK, utl)))
+        else:
+          active_clients[cpid].main_out_p.send((AUTH_RESULT, (AUTH_NOK, None)))
         active_clients[cpid].request = VOID_REQUEST
         active_clients[cpid].expires = now + client_force_close_socket_timeout
 
-      # If an add user or del user request has timed out, notify the client
-      # handler and replace the request with a fresh void request and
-      # associated timeout
+      # If an ADDUSER or DELUSER request has timed out, notify the client and
+      # replace the request with a fresh void request and associated timeout
       if (active_clients[cpid].request == ADDUSER_REQUEST or \
 		active_clients[cpid].request == DELUSER_REQUEST) and \
 		(active_clients[cpid].expires == None or \

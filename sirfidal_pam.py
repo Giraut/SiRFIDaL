@@ -8,10 +8,14 @@ This script is a SiRFIDaL client. It may be used in 3 different ways:
 - As a command line utility
 
 If used as a PAM module, it is preferable to use it with pam_python
-(http://pam-python.sourceforge.net/), as it is able to set the authentication
-token (authtok) for use by other PAM modules further down the PAM stack -
-particularly pam_gnome_keyring.so to unlock the keyring automatically
-using the authenticating RFID or NFC UID as keyring password.
+(http://pam-python.sourceforge.net/), as it is then able to set the PAM
+authentication token (authtok) to an optional secondary authentication token
+registered alongside the user/UID assocation with the SiRFIDaL server - or
+absent that secondary token, to the authenticating UID itself.
+This is particularly desirable to set the optional secondary authentication
+token to the user's regular Unix password, thus allowing other PAM modules to
+reuse the token to do interesting things such as unlocking the Gnome Keyring
+or mounting an encrypted Private space automatically at login.
 
 Unfortunately, pam_python does not come pre-built in all Linux distributions.
 In particular, RPM-based distributions (such as Fedora) don't include it. So
@@ -231,15 +235,20 @@ def pam_sm_authenticate(pamh, flags, argv):
     with scc.sirfidal_client() as sc:
 
       # Get the user's authentication status and authentication UIDs (if any)
-      authok, uids = sc.waitauth(user = pam_user, wait = wait_secs)
+      authok, uids_authtoks = sc.waitauth(user = pam_user, wait = wait_secs)
 
       # Was the user authenticated?
       if authok:
 
-        # If the server returned authenticating UIDs, set the authentication
-        # token to the first one for further use in the PAM stack
-        if uids:
-          pamh.authtok = uids[0]
+        # If the server returned authenticating UIDs / secondary authentication
+        # tokens, set the PAM authtok to the first authentication token returned
+        # by the server, otherwise to the first UID
+        if uids_authtoks:
+          authtoks = [ua[1] for ua in uids_authtoks if ua[1] is not None]
+          if authtoks:
+            pamh.authtok = authtoks[0]
+          else:
+            pamh.authtok = uids_authtoks[0][0]
 
         return pamh.PAM_SUCCESS
 
