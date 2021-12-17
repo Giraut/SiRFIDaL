@@ -73,10 +73,10 @@ systemctl daemon-reload
 
 %config /usr/share/pam-configs/sirfidal_pam.config
 
-/lib/systemd/system/sirfidal_auto_send_enter_at_login.service
-/lib/systemd/system/sirfidal_beep.service
-/lib/systemd/system/sirfidal_keyboard_wedge.service
-/lib/systemd/system/sirfidal_server.service
+%config /lib/systemd/system/sirfidal_server.service
+%config /lib/systemd/system/sirfidal_keyboard_wedge.service
+%config /lib/systemd/system/sirfidal_auto_send_enter_at_login.service
+%config /lib/systemd/system/sirfidal_beep.service
 
 /etc/xdg/autostart/sirfidal_autolockscreen.desktop
 /etc/xdg/autostart/sirfidal_autotype.desktop
