@@ -1,0 +1,5 @@
+# This rule sets /dev/uinput to group "uinput" (which should be created if it
+# doesn't exist of course) and permissions so members of that group can read and
+# write to it
+
+SUBSYSTEM=="misc", KERNEL=="uinput", MODE="0660", GROUP="uinput"

@@ -130,8 +130,6 @@ def main():
   """Main routine
   """
 
-  uids_list = None
-
   while True:
 
     try:
@@ -139,23 +137,11 @@ def main():
       # Connect to the server
       with scc.sirfidal_client() as sc:
 
-        # Watch UIDs
-        for r, uids in sc.watchuids(timeout = None):
+        # Watch the number of active UIDs
+        for _, chg in sc.watchnbuids():
 
-          # The server informs us we're not authorized to watch UIDs
-          if r == scc.NOAUTH:
-            print("Not authorized! Are you root?")
-            return -1
-
-          # If we got the initial UIDs update, initialize the UIDs lists
-          if uids_list is None:
-            uids_list = uids
-
-          uids_list_prev = uids_list
-          uids_list = uids
-
-          # Do we have new UIDs?
-          if set(uids_list) - set(uids_list_prev):
+          # Has the number of active UIDs increased?
+          if chg > 0:
 
             # Find out the active virtual console
             vc = active_vc()
@@ -170,8 +156,8 @@ def main():
 
               try:
                 ui = UInput()
-              except:
-                print("UInput open error: are you root?")
+              except Exception as e:
+                print("UInput open error: {}".format(e))
                 continue
 
               try:
@@ -182,8 +168,8 @@ def main():
                 ui.syn()
                 sleep(.1)   # Pause needed for gdm
                 print("ENTER sent to console {}".format(vc))
-              except:
-                print("UInput write error")
+              except Exception as e:
+                print("UInput write error: {}".format(e))
 
               ui.close()
 

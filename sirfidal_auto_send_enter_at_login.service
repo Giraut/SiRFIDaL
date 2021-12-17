@@ -3,6 +3,15 @@ Description=SiRFIDaL NFC / RFID readers automatic ENTER typer at login
 
 [Service]
 Type=simple
+
+# If you'd rather the SiRFIDaL keyboard wedge emulator didn't run as root,
+# uncomment these lines, create group "uinput" and create a udev rule to set
+# /dev/uinput to group "uinput" with permissions 0660:
+# SUBSYSTEM=="misc", KERNEL=="uinput", MODE="0660", GROUP="uinput"
+#User=sirfidal
+#Group=nogroup
+#SupplementaryGroups=uinput
+
 ExecStart=/usr/local/bin/sirfidal_auto_send_enter_at_login.py
 Restart=always
 RestartSec=1
