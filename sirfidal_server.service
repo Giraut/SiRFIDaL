@@ -11,6 +11,7 @@ Type=simple
 #Group=nogroup
 #SupplementaryGroups=plugdev
 #SupplementaryGroups=dialout
+#SupplementaryGroups=input
 
 ExecStart=/usr/local/bin/sirfidal_server.py
 Restart=always
