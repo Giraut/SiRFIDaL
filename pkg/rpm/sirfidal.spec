@@ -51,6 +51,8 @@ systemctl daemon-reload
 
 %files
 %doc /usr/share/doc/sirfidal/README
+%doc /usr/share/doc/sirfidal/README.example_PAM_scenarios
+%doc /usr/share/doc/sirfidal/README.security
 %doc /usr/share/doc/sirfidal/LICENSE
 
 /usr/local/bin/sirfidal_server.py

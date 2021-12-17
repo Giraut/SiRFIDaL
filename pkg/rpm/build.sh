@@ -33,6 +33,8 @@ mkdir -p ${BUILDROOT}/usr/share/doc/sirfidal
 
 # Populate the package build directory with the source files
 install -m 644 ${SRC}/README ${BUILDROOT}/usr/share/doc/sirfidal
+install -m 644 ${SRC}/README.example_PAM_scenarios ${BUILDROOT}/usr/share/doc/sirfidal
+install -m 644 ${SRC}/README.security ${BUILDROOT}/usr/share/doc/sirfidal
 install -m 644 ${SRC}/LICENSE ${BUILDROOT}/usr/share/doc/sirfidal
 
 install -m 755 ${SRC}/sirfidal_server.py ${BUILDROOT}/usr/local/bin
