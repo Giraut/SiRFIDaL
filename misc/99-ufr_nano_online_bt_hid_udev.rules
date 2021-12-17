@@ -13,5 +13,5 @@
 #
 # udevadm control --reload-rules
 # udevadm trigger
-#
+
 SUBSYSTEMS=="input", ATTRS{name}=="ON102339_HID Keyboard", SYMLINK+="input/ufr", ENV{ID_SEAT}="none"
