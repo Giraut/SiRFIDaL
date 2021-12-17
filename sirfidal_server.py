@@ -1924,13 +1924,14 @@ def client_handler(pid, uid, gid, pw_name, is_remote_user,
 
   setproctitle("sirfidal_server_client_handler_{}".format(pid))
 
-  # Drop our privileges to that of the client
-  try:
-    os.setgroups(os.getgrouplist(pw_name, gid))
-    os.setgid(gid)
-    os.setuid(uid)
-  except:
-    return 0
+  # If we run as root, drop our privileges to that of the client
+  if os.getuid() == 0:
+    try:
+      os.setgroups(os.getgrouplist(pw_name, gid))
+      os.setgid(gid)
+      os.setuid(uid)
+    except:
+      return 0
 
   # Client receive buffer
   crecvbuf = ""

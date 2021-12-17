@@ -3,7 +3,16 @@ Description=SiRFIDaL RFID / NFC UID authentication server
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/sirfidal_server.py -s
+
+# If you'd rather the SiRFIDaL server didn't run as root, uncomment these lines
+# and set permissions to let it read and write the /etc files and access the
+# reader devices as this user and supplementary groups
+#User=sirfidal
+#Group=nogroup
+#SupplementaryGroups=plugdev
+#SupplementaryGroups=dialout
+
+ExecStart=/usr/local/bin/sirfidal_server.py
 Restart=always
 RestartSec=1
 
