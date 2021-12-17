@@ -1,9 +1,9 @@
 #!/usr/bin/python3
-"""This program is the cornerstone of the SiRFIDaL system: it runs as root in
-the background and provides secure authentication services for local processes
-wishing to authenticate a user against a RFID or NFC UID, or manipulate the
-list of user / UID / optional secondary authentication token associations
-without exposing UIDs or authentication tokens to unauthorized processes.
+"""This program is the cornerstone of the SiRFIDaL system: it provides secure
+authentication services for local processes wishing to authenticate a user
+against a RFID or NFC UID, or manipulate the list of user / UID / optional
+secondary authentication token associations without exposing UIDs or
+authentication tokens to unauthorized processes.
 
 By default, only startup messages and error messages are printed out. To output
 extended debug messages, invoke with -d / --debug. To suppress startup
