@@ -519,6 +519,10 @@ Configuring an Android device as an external NFC reader for SiRFIDaL:
   * In Settings > System, enable Developer options and USB debugging:
     https://developer.android.com/studio/debug/dev-options
 
+  * Install and run the standalone SiRFIDaL_NFC_reader.apk app
+
+    -or-
+
   * Install Tasker:
     https://play.google.com/store/apps/details?id=net.dinglisch.android.taskerm
 
