@@ -24,6 +24,7 @@ mkdir -p ${PKGBUILD}/usr/local/share/sounds/sirfidal
 install -m 644 ${SRC}/README ${PKGBUILD}/usr/share/doc/sirfidal
 install -m 644 ${SRC}/README.example_PAM_scenarios ${PKGBUILD}/usr/share/doc/sirfidal
 install -m 644 ${SRC}/README.security ${PKGBUILD}/usr/share/doc/sirfidal
+install -m 644 ${SRC}/sirfidal_tasker_script.prf.xml ${PKGBUILD}/usr/share/doc/sirfidal
 install -m 644 ${SRC}/LICENSE ${PKGBUILD}/usr/share/doc/sirfidal
 
 install -m 755 ${SRC}/sirfidal_server.py ${PKGBUILD}/usr/local/bin
