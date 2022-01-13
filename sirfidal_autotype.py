@@ -279,7 +279,7 @@ def keyboard_event_listener(main_in_q):
 				(keyname if keyname is not None else keysym,
 				event.type == X.KeyPress)))
 
-  # Create a recoding context
+  # Create a recording context
   ctx = display.record_create_context(0, [record.AllClients], [{
 					"core_requests": (0, 0),
 					"core_replies": (0, 0),
