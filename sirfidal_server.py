@@ -294,12 +294,16 @@ def pcsc_listener(main_in_q, listener_id, params):
   log(VERBOSITY_NORMAL, listener_id, "Started")
 
   # Parameters
+  readers_regex = params["readers_regex"]
   poll_every = params["poll_every"]
 
   # Wait for the status on the connected PC/SC readers to change and get the
   # list of active PC/SC UIDs when it does
-  readers_prev = None
+  all_readers = None
+  all_readers_prev = None
   hcontext = None
+
+  readers = None
 
   while True:
 
@@ -307,7 +311,7 @@ def pcsc_listener(main_in_q, listener_id, params):
     poll_start_tstamp = time()
 
     # Wait on a PC/SC card's status change
-    readers = []
+    all_readers = []
 
     if not hcontext:
 
@@ -320,18 +324,24 @@ def pcsc_listener(main_in_q, listener_id, params):
 
     if hcontext:
 
-      _, readers = sc.SCardListReaders(hcontext, [])
+      _, all_readers = sc.SCardListReaders(hcontext, [])
 
-      if not readers:
+      if not all_readers:
         log(VERBOSITY_DEBUG, listener_id, "No readers")
         sc.SCardReleaseContext(hcontext)
         del(hcontext)
         hcontext = None
 
-    if readers and readers_prev != readers:
+    if all_readers and all_readers_prev != all_readers:
 
       rs = []
-      readers_prev = readers
+      all_readers_prev = all_readers
+
+      # Only work with readers whose name match the regular expression
+      readers = [r for r in all_readers \
+			if re.match("^" + readers_regex + "$", r)]
+      if not readers:
+        log(VERBOSITY_DEBUG, listener_id, "No reader names matching regex")
 
       for i in range(len(readers)):
         rs += [(readers[i], sc.SCARD_STATE_UNAWARE)]
@@ -2343,6 +2353,7 @@ def main():
 
       # USB PC/SC readers
     "pcsc":	{
+      "readers_regex":	((str,), lambda v: v != ""),
       "poll_every":	((int, float), lambda v: v > 0)
     },
 

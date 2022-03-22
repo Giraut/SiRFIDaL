@@ -6,6 +6,7 @@ readers = {
   # USB PC/SC readers
   "pcsc_readers":	{
     "enabled":		True,
+    "readers_regex":	".*", # Use readers with names matching anything
     "type":		"pcsc",
     "uids_timeout":	None, # as PC/SC readers are polled
     "poll_every":	0.2 #s
