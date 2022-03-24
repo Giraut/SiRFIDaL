@@ -422,6 +422,7 @@ def nfcpy_listener(main_in_q, listener_id, params):
 
   # Parameters
   device = params["device"]
+  flash_and_beep = params["flash_and_beep"]
   poll_every = params["poll_every"]
 
   # Bitrate + type of targets to search: type A, B and F tags at the lowest
@@ -500,6 +501,16 @@ def nfcpy_listener(main_in_q, listener_id, params):
 
       # Send the list of active UIDs to the main process if it has changed
       if active_uids_prev is None or set(active_uids_prev) != set(active_uids):
+        if flash_and_beep:
+          try:
+            (clf.device.turn_on_led_and_buzzer if active_uids else \
+		clf.device.turn_off_led_and_buzzer)()
+
+          except Exception as e:
+            log(VERBOSITY_DEBUG, listener_id, e)
+            close_device = True
+            continue
+
         main_in_q.put((LISTENER_UIDS_UPDATE, (listener_id, active_uids)))
 
       # Sleep long enough to meet the required polling rate
@@ -2465,6 +2476,7 @@ def main():
     # nfcpy readers
     "nfcpy":	{
       "device":		((str,), lambda v: v != ""),
+      "flash_and_beep":	((bool,), None),
       "poll_every":	((int, float), lambda v: v > 0)
     },
 

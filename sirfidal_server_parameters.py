@@ -17,6 +17,7 @@ readers = {
     "enabled":		False,
     "type":		"nfcpy",
     "device":		"usb:072f:2200",
+    "flash_and_beep":	True,
     "uids_timeout":	None, # as nfcpy readers are polled
     "poll_every":	0.2 #s
   },
