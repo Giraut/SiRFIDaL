@@ -6,9 +6,18 @@ readers = {
   # USB PC/SC readers
   "pcsc_readers":	{
     "enabled":		True,
-    "readers_regex":	".*", # Use readers with names matching anything
     "type":		"pcsc",
+    "readers_regex":	".*", # Use readers with names matching anything
     "uids_timeout":	None, # as PC/SC readers are polled
+    "poll_every":	0.2 #s
+  },
+
+  # nfcpy-supported readers
+  "nfcpy_readers":	{
+    "enabled":		False,
+    "type":		"nfcpy",
+    "device":		"usb:072f:2200",
+    "uids_timeout":	None, # as nfcpy readers are polled
     "poll_every":	0.2 #s
   },
 

@@ -405,6 +405,111 @@ def pcsc_listener(main_in_q, listener_id, params):
 
 
 
+def nfcpy_listener(main_in_q, listener_id, params):
+  """Periodically read UIDs directly from a USB or serial reader supported
+  by the nfcpy Python module (http://nfcpy.org/ - list of supported devices:
+  https://nfcpy.readthedocs.io/en/latest/overview.html#supported-devices) and
+  send the list of active UIDs to the main process. Useful if you don't want to
+  setup PC/SC and you don't care about sharing the reader with other
+  applications.
+  """
+
+  # Modules
+  import nfc
+
+  setproctitle("sirfidal_listener_{}".format(listener_id))
+  log(VERBOSITY_NORMAL, listener_id, "Started")
+
+  # Parameters
+  device = params["device"]
+  poll_every = params["poll_every"]
+
+  # Bitrate + type of targets to search: type A, B and F tags at the lowest
+  # bitrate
+  targets = ("106A", "106B", "212F")
+
+  clf = None
+  active_uids = None
+
+  close_device = False
+  exit_errcode = 0
+
+  while True:
+
+    # Close the device and/or exit if needed
+    if close_device or exit_errcode:
+      try:
+        clf.close()
+      except:
+        pass
+      del(clf)
+      clf = None
+
+      # Exit if needed
+      if exit_errcode:
+        return exit_errcode
+
+      sleep(2)	# Wait a bit to reopen the device
+      close_device = False
+
+    try:
+
+      # Open the device and set the targets
+      if clf is None:
+        try:
+          clf = nfc.ContactlessFrontend()
+
+        except Exception as e:
+          log(VERBOSITY_DEBUG, listener_id, e)
+          continue
+
+        try:
+          if not clf.open(device):
+            log(VERBOSITY_DEBUG, listener_id, "Error opening device {}"
+						.format(device))
+            close_device = True
+            continue
+
+        except Exception as e:
+          log(VERBOSITY_DEBUG, listener_id, e)
+          close_device = True
+          continue
+
+        try:
+          ts = [nfc.clf.RemoteTarget(t) for t in targets]
+
+        except Exception as e:
+          log(VERBOSITY_DEBUG, listener_id, e)
+          close_device = True
+          continue
+
+      poll_start_tstamp = time()
+
+      # Read UIDs from the reader
+      try:
+        t = clf.sense(*ts)
+
+      except Exception as e:
+        log(VERBOSITY_DEBUG, listener_id, e)
+        close_device = True
+        continue
+
+      active_uids_prev = active_uids
+      active_uids = [] if t is None else \
+			["".join([format(v, "02X") for v in t.sdd_res])]
+
+      # Send the list of active UIDs to the main process if it has changed
+      if active_uids_prev is None or set(active_uids_prev) != set(active_uids):
+        main_in_q.put((LISTENER_UIDS_UPDATE, (listener_id, active_uids)))
+
+      # Sleep long enough to meet the required polling rate
+      sleep(max(0, poll_every - time() + poll_start_tstamp))
+
+    except KeyboardInterrupt:
+      exit_errcode = -1
+
+
+
 def serial_listener(main_in_q, listener_id, params):
   """Read UIDs from a serial reader and send the list of active UIDs to the
   main process. The reader may be a repeating reader - i.e. one that sends the
@@ -2351,9 +2456,15 @@ def main():
   # Listener-specific parameters, types and verification functions
   reader_params_check_params = {
 
-      # USB PC/SC readers
+    # USB PC/SC readers
     "pcsc":	{
       "readers_regex":	((str,), lambda v: v != ""),
+      "poll_every":	((int, float), lambda v: v > 0)
+    },
+
+    # nfcpy readers
+    "nfcpy":	{
+      "device":		((str,), lambda v: v != ""),
       "poll_every":	((int, float), lambda v: v > 0)
     },
 
