@@ -275,6 +275,8 @@ Server configuration:
       - device:         nfcpy-style device specification. E.g. usb:072f:2200
                         for an ACR ACR122U. The list of supported devices is
                         at https://nfcpy.readthedocs.io/en/latest/overview.html
+      - flash_and_beep: Make the reader flash and beep when a UID is read, if
+                        the device is equipped with a LED and a buzzer
       - poll_every:     Delay in seconds between reader polls
 
     * Configuration options for serial readers:
