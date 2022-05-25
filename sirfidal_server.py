@@ -332,32 +332,34 @@ def pcsc_listener(main_in_q, listener_id, params):
         del(hcontext)
         hcontext = None
 
-    if all_readers and all_readers_prev != all_readers:
+    if all_readers_prev != all_readers:
 
-      rs = []
       all_readers_prev = all_readers
 
       # Only work with readers whose name match the regular expression
       readers = [r for r in all_readers \
 			if re.match("^" + readers_regex + "$", r)]
-      if not readers:
+      if readers:
+
+        rs = []
+        for i in range(len(readers)):
+          rs += [(readers[i], sc.SCARD_STATE_UNAWARE)]
+
+        try:
+          _, rs = sc.SCardGetStatusChange(hcontext, 0, rs)
+
+        except KeyboardInterrupt:
+          return -1
+
+        except Exception as e:
+          log(VERBOSITY_DEBUG, listener_id, e)
+          sc.SCardReleaseContext(hcontext)
+          del(hcontext)
+          hcontext = None
+          readers = []
+
+      if all_readers and not readers:
         log(VERBOSITY_DEBUG, listener_id, "No reader names matching regex")
-
-      for i in range(len(readers)):
-        rs += [(readers[i], sc.SCARD_STATE_UNAWARE)]
-
-      try:
-        _, rs = sc.SCardGetStatusChange(hcontext, 0, rs)
-
-      except KeyboardInterrupt:
-        return -1
-
-      except Exception as e:
-        log(VERBOSITY_DEBUG, listener_id, e)
-        sc.SCardReleaseContext(hcontext)
-        del(hcontext)
-        hcontext = None
-        readers = []
 
     if readers:
 
@@ -395,7 +397,10 @@ def pcsc_listener(main_in_q, listener_id, params):
           return -1
 
         except Exception as e:
-          log(VERBOSITY_DEBUG, listener_id, e)
+          err = str(e)
+          if verbosity >= VERBOSITY_DEBUG and not \
+		"SCardTransmit> returned NULL without setting an error" in err:
+            log(VERBOSITY_DEBUG, listener_id, err)
 
       # Send the list of active UIDs to the main process
       main_in_q.put((LISTENER_UIDS_UPDATE, (listener_id, active_uids)))
