@@ -4,7 +4,7 @@ Release:	0
 Summary:	SiRFIDal - Simple RFID authentication for Linux
 License:	GPL-3.0
 
-Requires:	python3 >= 3.5, python3-psutil, python3-filelock, python3-setproctitle, python3-pyscard, python3-pyserial, python3-evdev, python3-cryptography, python3-pyperclip, python3-xlib, python3-tkinter, xautomation, pcsc-lite, pcsc-tools, adb, sox
+Requires:	python3 >= 3.5, python3-psutil, python3-passlib, python3-filelock, python3-setproctitle, python3-pyscard, python3-pyserial, python3-evdev, python3-cryptography, python3-pyperclip, python3-xlib, python3-tkinter, xautomation, pcsc-lite, pcsc-tools, adb, sox
 
 
 %description
