@@ -72,7 +72,7 @@ def get_session_class(vc):
 
   sessionids = []
   for l in loginctl_stdout.split("\n"):
-    m = re.findall("^\s*(\S+)\s+([0-9]+)\s+([!-,\.0-9;A-~]{1,32})\s+.*$", l)
+    m = re.findall(r"^\s*(\S+)\s+([0-9]+)\s+([!-,\.0-9;A-~]{1,32})\s+.*$", l)
     if m:
       sessionids.append(m[0][0])
 
@@ -100,7 +100,7 @@ def get_session_class(vc):
 
     for l in loginctl_stdout.split("\n"):
 
-      m = re.findall("^(VTNr|Class)=([\S+]+)$", l)
+      m = re.findall(r"^(VTNr|Class)=([\S+]+)$", l)
       if m:
 
         if m[0][0] == "VTNr":
