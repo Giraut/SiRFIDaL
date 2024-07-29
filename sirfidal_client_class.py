@@ -168,7 +168,7 @@ class sirfidal_client:
 				timeout = wait + 5)
 
     # Check that the reply is valid
-    if re.search("^(NOAUTH|AUTHOK( +[0-9a-fA-F]+(:[^\s]+)?)*)$", reply):
+    if re.search(r"^(NOAUTH|AUTHOK( +[0-9a-fA-F]+(:[^\s]+)?)*)$", reply):
       f = reply.split()
       return (AUTHOK, [[ua[0].upper(), ua[1] if ua[1:] else None] \
 			for ua in [ua.split(":", 1) \
@@ -287,7 +287,7 @@ class sirfidal_client:
 
     while True:
 
-      m = re.findall("^NBUIDS +(\+?[0-9]+) +([-\+]?[0-9]+)$", reply)
+      m = re.findall(r"^NBUIDS +(\+?[0-9]+) +([-\+]?[0-9]+)$", reply)
       if m:
         yield (int(m[0][0]), int(m[0][1]))
       else:
