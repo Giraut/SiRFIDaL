@@ -788,7 +788,7 @@ def main():
         wmclass = window.get_wm_class()
         wmname = window.get_wm_name()
 
-        if wmname == None:
+        if wmname is None:
           window = window.query_tree().parent
           wmname = window.get_wm_name()
           wmclass = window.get_wm_class()
@@ -801,7 +801,7 @@ def main():
         else:
           wmname = ""
 
-        if wmname == None or wmclass == None or len(wmclass) < 2:
+        if wmname is None or wmclass is None or len(wmclass) < 2:
           print("Error getting the window in focus")
           continue
 
