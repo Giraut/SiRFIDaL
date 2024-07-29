@@ -184,8 +184,8 @@ from pty import openpty
 from select import select
 from time import time, sleep
 from string import hexdigits
-from crypt import crypt, mksalt
 from signal import signal, SIGCHLD
+from passlib.hash import sha512_crypt
 from setproctitle import setproctitle
 from filelock import FileLock, Timeout
 from base64 import b64encode, b64decode
@@ -780,7 +780,7 @@ def halo_listener(main_in_q, listener_id, params):
     elif scanner_state == 9:
       if c == "\r":
         if uid:
-          if re.match("^[0-9]+\.[0-9]+C$", recvbuf):
+          if re.match(r"^[0-9]+\.[0-9]+C$", recvbuf):
             temp = float(recvbuf[:-1])
             if alive_min_temp <= temp <= alive_max_temp:
               uid = alive_prefix + uid
@@ -1186,7 +1186,7 @@ def proxmark3_listener(main_in_q, listener_id, params):
   pty_master, pty_slave = openpty()
 
   # Possible Proxmark3 console prompts
-  prompts_regex = re.compile("^(proxmark3>|\[.*\] pm3 -->)$")
+  prompts_regex = re.compile(r"^(proxmark3>|\[.*\] pm3 -->)$")
 
   recvbuf = ""
 
@@ -1386,22 +1386,22 @@ def proxmark3_listener(main_in_q, listener_id, params):
 
       # Match Indala multiline UIDs
       if in_indala_multiline_uid:
-        m = re.findall("^ \(([0-9a-f]*)\)\s*$", l)
+        m = re.findall(r"^ \(([0-9a-f]*)\)\s*$", l)
         if m:
           uid = m[0]
           in_indala_multiline_uid = False
-        elif not re.match("^[01]+\s*$", l):
+        elif not re.match(r"^[01]+\s*$", l):
           in_indala_multiline_uid = False
 
       else:
-        if re.match("^\s*Indala UID=[01]+\s*$", l):
+        if re.match(r"^\s*Indala UID=[01]+\s*$", l):
           in_indala_multiline_uid = True
 
       # Match single lines containing UIDs
       if uid is None and not in_indala_multiline_uid:
-        m = re.findall("[\[\]+\s]*" \
-			"(UID|EM TAG ID|Indala Found .* Raw\s+0x|Animal ID)" \
-			"[\s:]*([0-9a-fA-F- ]+)$", l)
+        m = re.findall(r"[\[\]+\s]*" \
+			r"(UID|EM TAG ID|Indala Found .* Raw\s+0x|Animal ID)" \
+			r"[\s:]*([0-9a-fA-F- ]+)$", l)
         uid = m[0][1] if m else None
 
       # If we got a UID, add it to the list of active UIDs
@@ -2255,7 +2255,7 @@ def client_handler(pid, uid, gid, pw_name, is_remote_user,
             # the delay they requested, to prevent remote users from logging in
             # using local credentials, yet making it looks like a legit auth
             # request process
-            m = re.findall("^WAITAUTH\s([^\s]+)\s([-+]?[0-9]+\.?[0-9]*)$", l)
+            m = re.findall(r"^WAITAUTH\s([^\s]+)\s([-+]?[0-9]+\.?[0-9]*)$", l)
             if m:
               main_in_q.put((WAITAUTH_REQUEST, (pid, None if is_remote_user \
 						else m[0][0], float(m[0][1]))))
@@ -2264,8 +2264,8 @@ def client_handler(pid, uid, gid, pw_name, is_remote_user,
               # ADDUSER request: the requestor must be root, or the same user
               # for which a new association is requested. If not, deny the
               # request
-              m = re.findall("^ADDUSER\s([^\s]+)\s([-+]?[0-9]+\.?[0-9]*)"
-				"(\s([^\s]+))?$", l)
+              m = re.findall(r"^ADDUSER\s([^\s]+)\s([-+]?[0-9]+\.?[0-9]*)"
+				r"(\s([^\s]+))?$", l)
               if m:
                 if uid == 0 or m[0][0] == pw_name:
                   main_in_q.put((ADDUSER_REQUEST, (pid, m[0][0], float(m[0][1]),
@@ -2277,7 +2277,7 @@ def client_handler(pid, uid, gid, pw_name, is_remote_user,
                 # DELUSER request: the requestor must be root, or the same user
                 # as the one for which the deletion is requested. If not, deny
                 # the request
-                m = re.findall("^DELUSER\s([^\s]+)\s([-+]?[0-9]+\.?[0-9]*)$", l)
+                m = re.findall(r"^DELUSER\s([^\s]+)\s([-+]?[0-9]+\.?[0-9]*)$", l)
                 if m:
                   if uid == 0 or m[0][0] == pw_name:
                     main_in_q.put((DELUSER_REQUEST, (pid, m[0][0],
@@ -2287,7 +2287,7 @@ def client_handler(pid, uid, gid, pw_name, is_remote_user,
 
                 else:
                   # MUTEXACQ request
-                  m = re.findall("^MUTEXACQ\s([^\s]+)\s([-+]?[0-9]+\.?[0-9]*)$",
+                  m = re.findall(r"^MUTEXACQ\s([^\s]+)\s([-+]?[0-9]+\.?[0-9]*)$",
 				 l)
                   if m:
                     main_in_q.put((MUTEXACQ_REQUEST, (pid, m[0][0],
@@ -2295,7 +2295,7 @@ def client_handler(pid, uid, gid, pw_name, is_remote_user,
 
                   else:
                     # MUTEXREL request
-                    m = re.findall("^MUTEXREL\s([^\s]+)$", l)
+                    m = re.findall(r"^MUTEXREL\s([^\s]+)$", l)
                     if m:
                       main_in_q.put((MUTEXREL_REQUEST, (pid, m[0])))
 
@@ -2392,7 +2392,7 @@ def write_encruids(new_encruids):
 
   try:
     with open(encrypted_uids_file, "w") as f:
-      json.dump([e[:2] if e[2] == None else e for e in new_encruids],
+      json.dump([e[:2] if e[2] is None else e for e in new_encruids],
 		f, indent = 2)
   except:
     return False
@@ -2915,8 +2915,8 @@ def main():
             for uid in active_uids:
               for registered_user, registered_uid_encr, \
 			registered_authtok_encr in encruids:
-                if registered_user == active_clients[cpid].name and crypt(
-			uid, registered_uid_encr) == registered_uid_encr:
+                if registered_user == active_clients[cpid].name and \
+			sha512_crypt.verify(uid, registered_uid_encr):
                   authtok = decrypt(registered_authtok_encr, uid) \
 				if registered_authtok_encr else None
                   auth = True				# User authenticated...
@@ -2961,8 +2961,7 @@ def main():
               new_encruids.append([registered_user, registered_uid_encr,
 					registered_authtok_encr])
             else:
-              if crypt(new_active_uid, registered_uid_encr) != \
-				registered_uid_encr:
+              if not sha512_crypt.verify(new_active_uid, registered_uid_encr):
                 new_encruids.append([registered_user, registered_uid_encr,
 					registered_authtok_encr])
               else:
@@ -3002,7 +3001,7 @@ def main():
 				if active_clients[cpid].authtok is not None \
 				else None
             new_encruids.append([active_clients[cpid].name,
-					crypt(new_active_uid, mksalt()),
+					sha512_crypt.hash(new_active_uid),
 					authtok_encr])
             if write_encruids(new_encruids):
               active_clients[cpid].main_out_p.send((ENCRUIDS_UPDATE_OK,))
@@ -3017,7 +3016,7 @@ def main():
         # any matching user/UID - unless we have no timeout, in which case
         # remove all associations matching the requested user
         elif active_clients[cpid].request == DELUSER_REQUEST and \
-		(active_clients[cpid].expires == None or (
+		(active_clients[cpid].expires is None or (
 		active_uids_update and \
 		len(active_uids) == len(active_uids_prev) + 1)):
 
@@ -3031,9 +3030,9 @@ def main():
           for registered_user, registered_uid_encr, \
 		registered_authtok_encr in encruids:
             if registered_user == active_clients[cpid].name and (
-			active_clients[cpid].expires == None or crypt(
-			new_active_uid,
-			registered_uid_encr) == registered_uid_encr):
+			active_clients[cpid].expires is None or \
+			sha512_crypt.verify(new_active_uid,
+						registered_uid_encr)):
               assoc_deleted = True
             else:
               new_encruids.append([registered_user, registered_uid_encr,
@@ -3078,7 +3077,7 @@ def main():
       # authenticating UID(s), so send them along. If the requestor is root
       # only, they also have the right to get the authtoks.
       if active_clients[cpid].request == WAITAUTH_REQUEST and \
-		(auth or active_clients[cpid].expires == None or \
+		(auth or active_clients[cpid].expires is None or \
 		now >= active_clients[cpid].expires):
         if auth:
           if active_clients[cpid].uid == 0:
@@ -3096,7 +3095,7 @@ def main():
       # replace the request with a fresh void request and associated timeout
       if (active_clients[cpid].request == ADDUSER_REQUEST or \
 		active_clients[cpid].request == DELUSER_REQUEST) and \
-		(active_clients[cpid].expires == None or \
+		(active_clients[cpid].expires is None or \
 		now >= active_clients[cpid].expires):
         active_clients[cpid].main_out_p.send((ENCRUIDS_UPDATE_ERR_TIMEOUT,))
         active_clients[cpid].request = VOID_REQUEST
@@ -3107,7 +3106,7 @@ def main():
       # assigned to this client. Notify the client handler then replace the
       # request with a fresh void request and associated timeout
       if active_clients[cpid].request == MUTEXACQ_REQUEST and \
-		(active_clients[cpid].expires == None or \
+		(active_clients[cpid].expires is None or \
 		now >= active_clients[cpid].expires):
         active_clients[cpid].main_out_p.send((MUTEX_ERR_EXISTS,))
         active_clients[cpid].request = VOID_REQUEST
