@@ -190,7 +190,7 @@ from setproctitle import setproctitle
 from filelock import FileLock, Timeout
 from base64 import b64encode, b64decode
 from subprocess import Popen, DEVNULL, PIPE
-from multiprocessing import Process, Queue, Pipe
+from multiprocessing import Process, Queue, Pipe, Pool, cpu_count
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from socket import socket, timeout, AF_UNIX, SOCK_STREAM, SOL_SOCKET, \
 			SO_REUSEADDR, SO_PEERCRED
@@ -2453,6 +2453,29 @@ def param_check(params, p, types, checker):
 
 
 
+def verify_and_decrypt_authtok(uid, registered_uid_encr,
+				registered_authtok_encr):
+  """Function to verify that a UID matches a registered encrypted UID, then if
+  so, decrypt the associated authentication token if there is one.
+  This is a worker used in a multiprocessor pool to speed up authentication
+  requests for users that have multiple associated UIDs, since individual
+  encryption operations are quite slow
+  returns (None, None) if the UID was not verified,
+  (uid, None) if the UID is verified but no authentication token was given,
+  (uid, authtok) if the UID is verified and the authentication token decrypted
+  """
+
+  authtok = None
+  if sha512_crypt.verify(uid, registered_uid_encr):
+    if registered_authtok_encr is not None:
+      authtok = decrypt(registered_authtok_encr, uid)
+  else:
+    uid = None
+
+  return (uid, authtok)
+
+
+
 ### Main routine
 def main():
   """Main routine
@@ -2912,15 +2935,21 @@ def main():
           # encrypted UIDs associated with that user
           else:
 
+            to_verify = []
             for uid in active_uids:
               for registered_user, registered_uid_encr, \
 			registered_authtok_encr in encruids:
-                if registered_user == active_clients[cpid].name and \
-			sha512_crypt.verify(uid, registered_uid_encr):
-                  authtok = decrypt(registered_authtok_encr, uid) \
-				if registered_authtok_encr else None
-                  auth = True				# User authenticated...
-                  auth_uids_authtoks.append((uid, authtok))	# with these UID
+                if registered_user == active_clients[cpid].name:
+                  to_verify.append((uid, registered_uid_encr,
+					registered_authtok_encr))
+
+            if to_verify:
+              with Pool(processes = cpu_count()) as pool:
+                for uid, authtok in pool.starmap(verify_and_decrypt_authtok,
+							to_verify):
+                  if uid is not None:
+                    auth = True				# User authenticated...
+                    auth_uids_authtoks.append((uid, authtok))	# with these UID
 								# and authtok
 
             # Cache the result of this authentication - valid as long as the
