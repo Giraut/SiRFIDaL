@@ -190,6 +190,7 @@ from setproctitle import setproctitle
 from filelock import FileLock, Timeout
 from base64 import b64encode, b64decode
 from subprocess import Popen, DEVNULL, PIPE
+import multiprocessing
 from multiprocessing import Process, Queue, Pipe, Pool, cpu_count
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from socket import socket, timeout, AF_UNIX, SOCK_STREAM, SOL_SOCKET, \
@@ -2482,6 +2483,9 @@ def main():
   """
 
   setproctitle("sirfidal_server")
+
+  multiprocessing.set_start_method("fork")	# The forkserver default in
+						# Python >=3.14 creates problems
 
   # Main routine's input queue
   main_in_q = Queue()

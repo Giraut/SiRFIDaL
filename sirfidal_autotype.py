@@ -257,6 +257,9 @@ def keyboard_event_listener(main_in_q):
 
   setproctitle("sirfidal_autotype_keyboard_event_listener")
 
+  multiprocessing.set_start_method("fork")	# The forkserver default in
+						# Python >=3.14 creates problems
+
   # Create a dictionary of keysyms to XK_* key names
   keysym_to_keyname = {}
   for xk in dir(XK):

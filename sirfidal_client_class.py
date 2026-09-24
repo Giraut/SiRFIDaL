@@ -2,7 +2,7 @@
 """
 
 ### Parameters
-_sirfidal_default_server_socket_path = "/tmp/sirfidal_server.socket"
+_sirfidal_default_server_socket_path = "/var/tmp/sirfidal_server.socket"
 _sirfidal_default_global_config_file = "/etc/sirfidal_clients_parameters.py"
 _sirfidal_default_user_config_file = "~/.sirfidal_clients_parameters.py"
 _sirfidal_default_auth_wait = 2

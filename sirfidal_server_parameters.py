@@ -130,7 +130,7 @@ readers = {
 }
 
 # Server parameters
-socket_path = "/tmp/sirfidal_server.socket"
+socket_path = "/var/tmp/sirfidal_server.socket"
 max_server_connections = 15
 max_auth_request_wait = 60 #s
 client_force_close_socket_timeout = 60 #s
